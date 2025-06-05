@@ -1,0 +1,700 @@
+@font-face {
+  font-family: Apercu;
+  src: url("./Assets/Fonts/Apercu/Apercu\ Light.otf");
+}
+
+@font-face {
+  font-family: Alliance;
+  src: url("./Assets/Fonts/Alliance/Degarism\ Studio\ -\ Alliance\ No.1\ Light.otf");
+}
+
+@font-face {
+  font-family: Canopee;
+  src: url("./Assets/Fonts/CanopeeRegular.otf");
+}
+@font-face {
+  font-family: Sohne;
+  src: url("./Assets/Fonts/TestSohne/TestSöhne-Buch.otf");
+}
+@font-face {
+  font-family: Blanquotey;
+  src: url("./Assets/Fonts/Blanquotey.ttf");
+}
+*{
+  color: #787878;
+  font-family: Apercu;
+  margin: none;
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+  user-select: none;
+  
+}
+
+:root {
+  --primary-color: #b29577;
+  --secondary-color: #1a1a1a;
+}
+
+body{
+  margin: 0;
+}
+
+.slide-in {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 999;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  background-color: #0f0f0f;
+  transform-origin: bottom;
+}
+
+.slide-out {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  background-color: #0f0f0f;
+  transform-origin: top;
+}
+
+.slideText {
+  color: #dddddd;
+  font-size: 2vw;
+  font-family: canopee;
+  opacity: 0;
+  transition: all 0.5s ease-in-out;
+}
+
+.slideText.active {
+  bottom: 0;
+  opacity: 1;
+}
+
+.slideText.fade {
+  bottom: 1vw;
+  opacity: 0;
+}
+@keyframes shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  50% { transform: translateX(5px); }
+  75% { transform: translateX(-5px); }
+  100% { transform: translateX(0); }
+}
+
+.shake {
+  animation: shake 0.5s;
+}
+/* BBBBBBBBBOOOOOOOOOOOOAAAAAAAAAAAAAARRRRRRRRRRRRDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD */
+/* BBBBBBBBBOOOOOOOOOOOOAAAAAAAAAAAAAARRRRRRRRRRRRDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD */
+/* BBBBBBBBBOOOOOOOOOOOOAAAAAAAAAAAAAARRRRRRRRRRRRDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD */
+
+.board{
+  background: #070606;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.PopUp{
+  opacity: 0;
+  top: 95vh;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 9vw;
+  border-radius: 1vw;
+  height: 2vw;
+  background-color: #b29577 ;
+  border: #1a1a1a solid;
+}
+.PopUp .popup-text{
+  opacity: 0;
+  color: #1a1a1a; 
+  font-size: 1vw;
+  font-weight: bold;
+}
+.abouts{
+  display: flex;
+  flex-direction: row;
+  gap: 1vw;
+  justify-content: center;
+  object-fit: none;
+  width: 100%;
+}
+.line{
+  display: flex;
+  flex-direction: row;
+  gap: 1vw;
+
+}
+.abouts .col{
+  display: flex;
+  flex-direction: column;
+  gap: 1vw;
+}
+
+.infobox{
+  
+  border-radius: 2vw;
+  opacity: 0;
+  /* border: 2px solid rgb(39, 39, 39); */
+  
+}
+
+
+/* INFOBOX SKILLS */
+/* INFOBOX SKILLS */
+/* INFOBOX SKILLS */
+.SkillsInfo{
+  background-color: #821113;
+  width: 25vw;
+  height: 30vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.SkillsContainer {
+  width: 80%;
+  height: 22vw;
+  overflow: hidden;
+  position: relative;
+  border-radius: 30px;
+}
+.SkillsInfo h1{
+  align-self: flex-start;
+  margin-left: 2.6vw;
+  height: 3vw;
+  overflow: hidden;
+  min-width: 30vw;
+  position: relative;
+  
+}
+.SkillsInfo .hide-text{
+  color: #b29577;
+  font-family: Canopee;
+  font-size: 2.4vw;
+  position: absolute;
+}
+.skill {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 1vw;
+  background: #b29577;
+  border-radius: 1vw;
+  width: 18vw;
+  height: 3vw;
+  margin-bottom: 20px;
+  position: relative;
+  overflow: hidden;
+}
+.skill span{
+  position: absolute;
+  font-weight: 600;
+  font-size: 1.4vw;
+  color: #251c1c;
+}
+
+
+/* INFOBOX CONTACTS */
+/* INFOBOX CONTACTS */
+/* INFOBOX CONTACTS */
+.ContactInfo{
+  background: rgb(26, 26, 26);
+  height: 10vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ContactInfo h1 span:nth-child(1){
+  font-family: Canopee;
+  font-family: 100;
+  color: #b29577;
+  
+}
+.ContactInfo h1 i{
+  color: #b29577;
+  font-family: Canopee;
+  font-weight: 300;
+
+  
+}
+.contact{
+  padding: 1vw 2vw;
+  display: flex;
+  flex-direction: row;
+  gap: 2vw;
+
+}
+.contact .contactItem{
+  font-size: 1.5vw;
+  position: relative;
+  overflow: hidden;
+  width: 1.5vw;
+  height: 2vw;
+}
+.contact .contactItem .social-icon{
+  position: absolute;
+  display: flex;
+  flex-direction: row;
+  gap: 0.3vw;
+
+}
+
+
+.contact .contactItem path{
+  color: #b29577;
+}
+/* INFOBOX EDUCATION */
+/* INFOBOX EDUCATION */
+/* INFOBOX EDUCATION */
+/*  */
+.EducationInfo{
+  background-color: #191919;
+  height: 20vw;
+  width: 25vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.EducationInfo h1{
+  font-family: Canopee;
+  color: #b29577;
+  font-size: 2.1vw;
+}
+
+.EducationInfo .SkillSetList{
+  display: flex;
+  flex-direction: column;
+  gap: 1.4vw;
+
+}
+.EducationInfo .SkillSetList .SkillSet{
+  align-self: flex-start;
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  gap: 1vw;
+  font-size: 1.7vw;
+  position: relative;
+  overflow: hidden;
+  width: 20vw;
+  height: 2vw;
+}
+.EducationInfo .SkillSetList .SkillSet span{
+  margin-left: 3vw;
+  position: absolute;
+  color: #b29577;
+  font-weight: 800;
+}
+
+.EducationInfo .SkillSetList .SkillSet path{
+  color: #b29577;
+}
+/* INFOBOX ABOUT */
+/* INFOBOX ABOUT */
+/* INFOBOX ABOUT*/
+.AboutInfo{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 20vw;
+  background-color: #b29577;
+  gap: 3.8vw;
+}
+.AboutInfo h1{
+  padding-right: 2vw;
+  margin-left: 15vw;
+  color: #070606;
+  font-family: Canopee;
+  font-size: 2.7vw;
+}
+.Sherzybath{
+  max-width: 40vw;
+  display: flex;
+  flex-direction: column;
+  
+}
+.Sherzybath span{
+  margin-left: 1vw;
+  min-width: 30vw;
+  margin-right: 4vw;
+  min-height: 2.6vw;
+  position: relative;
+  overflow: hidden;
+}
+
+.Sherzybath .hide-text {
+  position: absolute;
+  font-weight: 700;
+  color: #070606;
+  
+  font-size: 2.2vw;
+  
+
+  
+}
+.Sherzybath i{
+  color: #070606;
+  font-family: Canopee;
+  font-weight: 200;
+}
+.Sherzybath strong{
+  color: #070606;
+  font-family: Canopee;
+  font-weight: 600;
+}
+.Sherzybath u{
+  color: #070606;
+  font-weight: 900;
+}
+/* INFOBOX ADHD */
+/* INFOBOX ADHD */
+/* INFOBOX ADHD*/
+.AdhdInfo{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-grow: 1;
+  background-color: #5b828e;
+}
+.AdhdInfo h1{
+  color: #242a2c;
+  font-family: Canopee;
+}
+.trackpad{
+  flex: 0.9;
+  width: 85%; 
+  align-self: center; 
+  border-radius: 2vw;
+  background-color: #bbcfd7;
+}
+
+
+/* COOOOOOOOOOOOMMMMMMMMMMMMMMMMMMPPPPPPPPPPIIIIIIIIIIIIILLLLLLLLLLLLLLLLLLLLLLLLLEEEEEEEEEEEEEEERRRRRRRRRRRRRRRRR */
+/* COOOOOOOOOOOOMMMMMMMMMMMMMMMMMMPPPPPPPPPPIIIIIIIIIIIIILLLLLLLLLLLLLLLLLLLLLLLLLEEEEEEEEEEEEEEERRRRRRRRRRRRRRRRR */
+/* COOOOOOOOOOOOMMMMMMMMMMMMMMMMMMPPPPPPPPPPIIIIIIIIIIIIILLLLLLLLLLLLLLLLLLLLLLLLLEEEEEEEEEEEEEEERRRRRRRRRRRRRRRRR */
+
+.logo{
+  margin-top: auto;
+  margin-bottom: auto;
+  height: 3.5vw;
+  width: 3.5vw;
+  user-select: none;
+  cursor: pointer;
+  transition: transform 1s ease-in-out;
+}
+
+.logo:hover{
+  transform: rotate(360deg);
+}
+.halfGol{
+  transition: transform 1s ease-in-out;
+}
+.halfGol:hover{
+  transform: rotate(180deg);
+}
+.GolGol:hover {
+  transform: rotate(180000deg);
+}
+.compiler{
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  padding-left: 0.57vw;
+  padding-right: 0.57vw;
+  padding-top: 0.54vw;
+  margin-left: auto;
+  margin-right: auto;
+  height: 4vw;
+  width: 3.5vw;
+  /* 25vw */
+  background-color: rgb(6, 6, 6);
+  border-radius: 2vw;
+  text-align: center;
+  border: 2px solid rgb(39, 39, 39);
+}
+.compiler .Nav{
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+}
+.compiler .Nav .Input{
+  width: 100%;
+  margin-top: auto;
+  margin-bottom: auto;
+  font-size: 2vw;
+  padding-left: 1vw;
+  font-weight: 100;
+  text-align: left;
+  background-color: transparent;
+  border: none;
+  color: #989898;
+}
+.Nav .Input:focus{
+  outline: none;
+}
+.compiler .list{
+  justify-content: space-around;
+  padding-top: 1.2vw;
+  padding-bottom: 1.2vw;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  opacity: 0;
+
+}
+
+.compiler .list .listItem{
+  display: flex;
+  flex-direction: row;
+  gap: 2.5vw;
+  padding-left: 1.3vw;
+  outline: none;
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+}
+.compiler .list .listItem:hover span{
+  color: rgb(172, 170, 170);
+}
+.compiler .list .listItem span.active {
+  color: rgb(172, 170, 170);
+}
+.IconFA{
+  margin-top: auto;
+  margin-bottom: auto;
+  
+}
+.IconFA path{
+  color:rgb(59, 59, 59);
+}
+
+.compiler .listItem span{
+  transition: 0.4s ease-in;
+  font-size: 1.5vw;
+  color:rgb(59, 59, 59);
+  
+}
+
+/* PROJECTS */
+/* PROJECTS */
+/* PROJECTS */
+
+.ProjectDisplay{
+  min-height: 200vh;
+  width: 100vw;
+  overflow: hidden;
+  
+}
+
+.ProjectDisplay .Pillar1{
+  position: fixed;
+  top: 100vh;
+  left: 0;
+  height: 200vh;
+  width: 8vw;
+  background-color: var(--primary-color);
+}
+.ProjectDisplay .Pillar2{
+  position: fixed;
+  top: 100vh;
+  right: 0;
+  height: 200vh;
+  width: 8vw;
+  background-color: var(--primary-color);
+  z-index: 100;
+}
+.Pillar2 .TagName{
+  margin-top: 7vh;
+  margin-left: 1vw;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  display: inline-block;
+  color: var(--secondary-color);
+  font-size: 1vw;
+
+}
+.Pillar2 .line{
+  width: 2px;
+  height: 0vh;
+  background-color: var(--secondary-color);
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 10vh;
+}
+.Rilli{
+  position: absolute;
+  top: 150%;
+  left: 50%;
+  transform: translate(-50%,-50%) scale(0.7);
+  width: 100vw;
+  min-height: 300vh;
+  clip-path: polygon(0% 100%, 100% 100%, 100% 100%, 0% 100%);
+  will-change: transform;
+  z-index: 0;
+}
+
+.Rilli .overlay{
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  clip-path: polygon(0% 100%, 100% 100%, 100% 0%, 0% 0%);
+}
+.ProjectDisplay header{
+  position: absolute;
+  width: 100%;
+  top: -5%;
+  left: 0;
+  clip-path: polygon(0% 100%, 100% 100%, 100% 0%, 0% 0%);
+  z-index: 1;
+}
+.ProjectDisplay .Title{
+  width: 100%;
+  text-align: center;
+  font-size: 25.5vw;
+  font-weight: lighter;
+  line-height: 100%;
+  display: inline-block;
+  transform: scaleY(1.4); 
+  line-height: normal;
+}
+.ProjectDisplay header .Title span{
+  position: relative;
+  display: inline-block;
+  transform: translateY(500px);
+}
+.ProjectDisplay .VIDEO{
+  height: 100%;
+  width: 100%;
+  z-index: 0;
+}
+.ProjectDisplay .VIDEO video{
+  width: 80vw;
+  /* transform: scale(2); */
+  object-fit: cover;
+
+}
+.ProjectDisplay .ProjectCont{
+
+  position: absolute;
+  top: 100vh;
+  padding-left: 7.9vw;
+  padding-right: 7.9vw;
+ padding-bottom: 10vh;
+  background-color: var(--primary-color);
+  margin-top: 80vh;
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10vh;
+}
+.ProjectDisplay .ProjectDeet{
+  margin-top: 10vh;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  align-items: center;
+  gap: 0.5vw;
+}
+.ProjectDeetTop{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ProjectDisplay .ProjectDeetTop p{
+  padding: 0vw 10vw;
+  color: var(--secondary-color);
+  font-size: 2vw;
+  font-family: Apercu;
+  width:  80%;
+}
+.ProjectDisplay .ProjectDeetBottom{
+  display: flex;
+  flex-direction: row;
+  width: 76%;
+  justify-content: space-between;
+
+}
+.ProjectDeetBottom div{
+  display: flex;
+  flex-direction: column;
+  gap: 0.5vw;
+  max-width: 40%;
+}
+.ProjectDeetBottom span{
+  color: var(--secondary-color);
+  font-size: 1vw;
+  letter-spacing: 0.1vw;
+}
+.ProjectDeetBottom .Head{
+  font-size: 1vw;
+  font-weight: bold;
+  text-decoration: underline;
+}
+.ProjectDeetBottom .Text{
+  font-size: 0.9vw;
+  font-weight: 300;
+}
+
+.ProjectCont img{
+  width: 95%;
+  height: 95%;
+  object-fit: contain;
+}
+.ProjectCont p{
+  color: var(--secondary-color);
+  font-size: 1.1vw;
+  padding: 0vw 22vw;
+}
+.ProjectDisplay .Finale{
+  display: flex;
+  flex-direction: column;
+  gap: 0.7vw;
+  align-items: center;
+  background-color: var(--secondary-color);
+  padding: 5vw 10vw;
+}
+.ProjectDisplay .Finale span{
+    font-family: Canopee;
+    font-size: 2vw;
+    color: var(--primary-color);
+}
+.ProjectDisplay .Finale button{
+  font-family: Sohne;
+    font-size: 1vw;
+    border: none;
+    background-color: var(--primary-color);
+    color: var(--secondary-color);
+    border-radius: 0.75vw;
+    padding: 0.4vw 0.7vw;
+    transition: 0.3s ease-in-out;
+    display: flex;
+    align-items: center;
+}
+.ProjectDisplay .Finale button:hover{
+  padding: 0.4vw 1.5vw;
+  text-decoration: underline;
+}
+/* #b692a1 */

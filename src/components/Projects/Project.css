@@ -1,0 +1,24 @@
+@font-face {
+    font-family: Apercu;
+    src: url("./Assets/Fonts/Apercu/Apercu\ Light.otf");
+  }
+  
+  @font-face {
+    font-family: Alliance;
+    src: url("./Assets/Fonts/Alliance/Degarism\ Studio\ -\ Alliance\ No.1\ Light.otf");
+  }
+  
+  *{
+    color: #787878;
+    font-family: Apercu;
+    margin: none;
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+    user-select: none;
+    
+  }
+  
+  
+  body{
+    margin: 0;
+  }
