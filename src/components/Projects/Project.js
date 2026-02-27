@@ -25,7 +25,7 @@ function Project() {
   // USE STATES
   // USE STATES
   // USE STATES
-  const [isSwap, setSwap] = useState(false);
+  const [swapTick, setSwapTick] = useState(0);
   const [currentComponent, setCurrentComponent] = useState('Rilli');
   const [isHelp, setHelp] = useState(false);
 
@@ -134,17 +134,19 @@ function Project() {
   // SPLIT TEXT
 
 
+  const triggerSwap = () => setSwapTick((prev) => prev + 1);
+
   return (
     <div ref={boardRef} className='ProjectDisplay'>
       
-      <Compiler boardRef={boardRef} compilerRef={compilerRef} currentComponent={currentComponent} setCurrentComponent={setCurrentComponent} isHelp={isHelp} setHelp={setHelp} setSwap={setSwap}/>
+      <Compiler boardRef={boardRef} compilerRef={compilerRef} currentComponent={currentComponent} setCurrentComponent={setCurrentComponent} isHelp={isHelp} setHelp={setHelp} triggerSwap={triggerSwap}/>
       {currentComponent === 'Rilli' && <Rilli PillarsRef={PillarsRef} projectCont={projectCont} overlayRef={overlayRef} heroRef={heroRef} videoRef={videoRef} titleRef={titleRef} spanRefs={spanRefs}/>}
       {currentComponent === 'SkillWeave' && <SkillWeave PillarsRef={PillarsRef} projectCont={projectCont} overlayRef={overlayRef} heroRef={heroRef} videoRef={videoRef} titleRef={titleRef} spanRefs={spanRefs}/>}
       {currentComponent === 'Rentique' && <Rentique PillarsRef={PillarsRef} projectCont={projectCont} overlayRef={overlayRef} heroRef={heroRef} videoRef={videoRef} titleRef={titleRef} spanRefs={spanRefs}/>}
       
       <AnimatePresence mode="wait">
         <motion.div
-        key={isSwap + "-in"}
+          key={swapTick + "-in"}
           className="slide-in"
           initial = {{scaleY:0}}
           animate = {{scaleY:0}}
@@ -153,7 +155,7 @@ function Project() {
         />
 
         <motion.div
-         key={isSwap + "-out"}
+          key={swapTick + "-out"}
           className="slide-out"
           initial={{ scaleY: 1 }}
           animate={{ scaleY: 0 }} 

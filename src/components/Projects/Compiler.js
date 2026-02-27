@@ -4,48 +4,43 @@ import Sherzy from '../../Assets/Images/SherzyChibi.png'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faMinus, faPlus } from '@fortawesome/free-solid-svg-icons';
 import CommandInputBox from './CommandInputBox';
-import {handleTransitionProjects, helpProject, unhandleHelpCommand, undoLoad, onLoadAnimation,  } from '../../Commands';
+import { helpProject, unhandleHelpCommand, undoLoad, onLoadAnimation } from '../../Commands';
 
 import { useNavigate } from 'react-router-dom';
 import { motion, useScroll, useTransform, useMotionValue } from 'framer-motion';
 
-const Compiler = ({ compilerRef, infoBoxRefs, boardRef, currentComponent, setCurrentComponent,  isHelp, setHelp, control, setSwap}) => {
+const Compiler = ({ compilerRef, infoBoxRefs, boardRef, currentComponent, setCurrentComponent,  isHelp, setHelp, control, triggerSwap }) => {
   const listRef = useRef(null);
   const navigate = useNavigate()
   const [isOpen, setOpen] = useState(false);
+
+  const runProjectSwap = (targetComponent, closeCompiler = false) => {
+    triggerSwap();
+
+    if (closeCompiler) {
+      undoLoad(compilerRef, setOpen, setHelp, listRef);
+    }
+
+    setTimeout(() => {
+      setCurrentComponent(targetComponent);
+    }, 900);
+  };
+
   const commands = {
     '/help': () => {
       if (isHelp) {
         unhandleHelpCommand(compilerRef, listRef, setHelp);
-    } else {
-      helpProject(compilerRef, listRef, setHelp)
-    }},
+      } else {
+        helpProject(compilerRef, listRef, setHelp);
+      }
+    },
     '/aboutme': () => {
-      navigate("/")
+      navigate('/');
     },
-    
-    '/skillweave': () => {
-      setSwap(true)
-      undoLoad(compilerRef, setOpen, setHelp, listRef)
-      setTimeout(() => {
-        setCurrentComponent('SkillWeave'); 
-      }, 900); 
-      
-    },
-    '/rilli': () => {
-      setSwap(true)
-      setTimeout(() => {
-        setCurrentComponent('Rilli'); 
-      }, 900); 
-      setSwap(false)
-    },
-    '/rentique': () => {
-      setSwap(true)
-      setTimeout(() => {
-        setCurrentComponent('Rentique'); 
-      }, 900); 
-      setSwap(false)
-    },
+
+    '/skillweave': () => runProjectSwap('SkillWeave', true),
+    '/rilli': () => runProjectSwap('Rilli'),
+    '/rentique': () => runProjectSwap('Rentique'),
 
   };
   const { scrollYProgress } = useScroll();
