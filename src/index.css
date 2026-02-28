@@ -20,6 +20,63 @@
   font-family: Blanquotey;
   src: url("./Assets/Fonts/Blanquotey.ttf");
 }
+
+@font-face {
+  font-family: NeueMontreal;
+  src: url("./Assets/Fonts/NeueMontreal/NeueMontreal-Regular.otf");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: NeueMontreal;
+  src: url("./Assets/Fonts/NeueMontreal/NeueMontreal-Medium.otf");
+  font-weight: 500;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: NeueMontreal;
+  src: url("./Assets/Fonts/NeueMontreal/NeueMontreal-Bold.otf");
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: NeueMontreal;
+  src: url("./Assets/Fonts/NeueMontreal/NeueMontreal-Light.otf");
+  font-weight: 300;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: NeueMontreal;
+  src: url("./Assets/Fonts/NeueMontreal/NeueMontreal-Italic.otf");
+  font-weight: 400;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: NeueMontreal;
+  src: url("./Assets/Fonts/NeueMontreal/NeueMontreal-LightItalic.otf");
+  font-weight: 300;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: NeueMontreal;
+  src: url("./Assets/Fonts/NeueMontreal/NeueMontreal-MediumItalic.otf");
+  font-weight: 500;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: NeueMontreal;
+  src: url("./Assets/Fonts/NeueMontreal/NeueMontreal-BoldItalic.otf");
+  font-weight: 700;
+  font-style: italic;
+}
+
 *{
   color: #787878;
   font-family: Apercu;
@@ -385,6 +442,108 @@ body{
   align-self: center; 
   border-radius: 2vw;
   background-color: #bbcfd7;
+}
+
+.AdhdInfo h1{
+  cursor: pointer;
+}
+
+.game-key{
+  border: 1px solid #3a3a3a !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.game-key > *:not(.game-key-label):not(.game-key-ring){
+  display: none !important;
+  pointer-events: none !important;
+}
+
+.game-key.compiler,
+.game-key.infobox{
+  padding: 0 !important;
+}
+
+.game-key-active{
+  background: #d8b36f !important;
+  border-color: #f3d9a2 !important;
+  box-shadow: 0 0 0 1px rgba(243,217,162,0.85), 0 0 10px rgba(216,179,111,0.35), 0 8px 20px rgba(0,0,0,0.35) !important;
+}
+
+.game-key-active .game-key-label{
+  color: #1b1710 !important;
+  text-shadow: none !important;
+}
+
+.game-key-label{
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f7e8c3;
+  text-shadow: 0 0 8px rgba(216,179,111,0.45);
+  font-size: 1.55rem;
+  font-family: Canopee, sans-serif;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+  transition: color 160ms ease, text-shadow 160ms ease;
+}
+
+.game-key-ring{
+  position: absolute;
+  inset: 0;
+  opacity: 1;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.game-key-ring-svg{
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.game-key-ring-path{
+  fill: none;
+  stroke: #d8b36f;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 2px rgba(216,179,111,0.45));
+}
+
+.game-screen-placeholder{
+  position: fixed;
+  left: 50%;
+  top: 39%;
+  transform: none;
+  width: 79vw;
+  height: 72vh;
+  border-radius: 1.4vw;
+  background: radial-gradient(circle at 30% 20%, #202737, #10151f 70%);
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+  z-index: 25;
+  display: none;
+  will-change: transform, opacity;
+}
+
+.game-screen-content{
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d2c8ba;
+  font-size: 1.3vw;
+  letter-spacing: 0.08em;
+  font-family: Canopee, sans-serif;
 }
 
 
