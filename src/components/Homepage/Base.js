@@ -6,6 +6,7 @@ import Skills from './Skills';
 import About from './About';
 import Contacts from './Contacts';
 import Education from './Education';
+import AsteroidsMini from './AsteroidsMini';
 import gsap from 'gsap';
 
 function Base() {
@@ -335,6 +336,43 @@ function Base() {
     });
   }, [pressedKeys, isGameMode]);
 
+  useEffect(() => {
+    if (!isGameMode) return;
+
+    const keyEls = Array.from(document.querySelectorAll('.game-key'));
+    const disposers = [];
+
+    keyEls.forEach((el) => {
+      const key = el.getAttribute('data-key');
+      if (!key) return;
+
+      const press = () => {
+        setPressedKeys((prev) => new Set(prev).add(key));
+      };
+      const release = () => {
+        setPressedKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      };
+
+      el.addEventListener('pointerdown', press);
+      el.addEventListener('pointerup', release);
+      el.addEventListener('pointerleave', release);
+      el.addEventListener('pointercancel', release);
+
+      disposers.push(() => {
+        el.removeEventListener('pointerdown', press);
+        el.removeEventListener('pointerup', release);
+        el.removeEventListener('pointerleave', release);
+        el.removeEventListener('pointercancel', release);
+      });
+    });
+
+    return () => disposers.forEach((fn) => fn());
+  }, [isGameMode]);
+
   const enterGameMode = () => {
     if (isGameMode) return;
     setGameMode(true);
@@ -414,7 +452,9 @@ function Base() {
       </div>
 
       <div ref={gameScreenRef} className='game-screen-placeholder'>
-        <div className='game-screen-content'>MINI ASTEROIDS SCREEN</div>
+        <div className='game-screen-content'>
+          <AsteroidsMini isGameMode={isGameMode} pressedKeys={pressedKeys} />
+        </div>
       </div>
     </div>
   );

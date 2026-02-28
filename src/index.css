@@ -525,7 +525,7 @@ body{
   transform: none;
   width: 79vw;
   height: 72vh;
-  border-radius: 1.4vw;
+  border-radius: 0;
   background: radial-gradient(circle at 30% 20%, #202737, #10151f 70%);
   border: 1px solid rgba(255,255,255,0.18);
   box-shadow: 0 18px 40px rgba(0,0,0,0.45);
