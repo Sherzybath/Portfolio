@@ -38,7 +38,17 @@ In Game Mode, these inputs highlight matching keycaps:
 - `S` / `ArrowDown` → `↓`
 - `D` / `ArrowRight` → `→`
 - `Q` → `Q`
-- `E` → `E`
+- `Space` → `␣`
+
+### Asteroids Progress
+- **Phase 1 complete:** ship movement, heavy momentum, bounded movement, center spawn.
+- **Phase 2 complete:**
+  - Spacebar shooting with pellet projectiles
+  - Random asteroid spawns (hex-ish outlines, varying sizes)
+  - Asteroids home toward ship
+  - Bullet ↔ asteroid collision + score
+  - Impact particle burst on hit
+  - Asteroid ↔ asteroid collision bounce (no merge-through)
 
 ## Animation system
 - GSAP controls Game Mode timeline and key/screen staging.

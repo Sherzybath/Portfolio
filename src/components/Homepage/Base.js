@@ -126,7 +126,7 @@ function Base() {
     const map = [
       { el: infoBoxRefs.current[0], key: 'Q', x: cx - keyWidth - gap, y: rowTopY },
       { el: compilerRef.current, key: '↑', x: cx, y: rowTopY },
-      { el: infoBoxRefs.current[1], key: 'E', x: cx + keyWidth + gap, y: rowTopY },
+      { el: infoBoxRefs.current[1], key: '␣', x: cx + keyWidth + gap, y: rowTopY },
       { el: infoBoxRefs.current[2], key: '←', x: cx - keyWidth - gap, y: rowBottomY },
       { el: infoBoxRefs.current[3], key: '↓', x: cx, y: rowBottomY },
       { el: infoBoxRefs.current[4], key: '→', x: cx + keyWidth + gap, y: rowBottomY },
@@ -289,7 +289,7 @@ function Base() {
       if (k === 'arrowleft' || k === 'a') return '←';
       if (k === 'arrowright' || k === 'd') return '→';
       if (k === 'q') return 'Q';
-      if (k === 'e') return 'E';
+      if (k === ' ' || k === 'spacebar' || k === 'space') return '␣';
       return null;
     };
 
