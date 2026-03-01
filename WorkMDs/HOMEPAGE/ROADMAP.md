@@ -17,16 +17,18 @@ This roadmap is the current agreed direction for the homepage game system.
 - Hearts/lives + invulnerability blink + game over state.
 - Right HUD panel and left blank panel layout.
 
-## Phase 3 (Next)
-- `Q` dodge ability (burst movement + cooldown).
-- `Esc` exits game mode and restores homepage layout via reverse animation.
-- Game-over flow polish (restart/exit options).
+## Phase 3 (Done)
+- `Esc` exits game mode with red-screen transition and collapse flow.
+- Homepage restore/re-entry flow polish (clean reset + transition replay).
+- Game-over exit flow polish (`Again` path).
 
-## Phase 4 (Planned)
+## Phase 4 (Next)
 - Progression foundation (upgrade stat model, stacking rules).
+- `Q` repurposed from dodge to skill trigger foundation.
 
 ## Phase 5 (Planned)
 - Left panel upgrades UI (skills/abilities/passives).
+- `Q` bound to selected skill/ability usage from upgrades system.
 
 ## Phase 6 (Planned)
 - Upgrade content pack (examples: triple laser, super dodge, free-hit shield, score amp).
