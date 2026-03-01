@@ -54,7 +54,7 @@ function makeAsteroid(width, height, shipX, shipY) {
   };
 }
 
-function AsteroidsMini({ isGameMode, pressedKeys }) {
+function AsteroidsMini({ isGameMode, pressedKeys, onHudUpdate }) {
   const canvasRef = useRef(null);
 
   const shipRef = useRef({ x: 0, y: 0, angle: -Math.PI / 2, radius: 13 });
@@ -71,10 +71,75 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
   const spawnTimerRef = useRef(0);
   const shootCooldownRef = useRef(0);
   const scoreRef = useRef(0);
+  const pointsRef = useRef(0);
+  const livesRef = useRef(3);
+  const invulnRef = useRef(0);
+  const gameOverRef = useRef(false);
+  const hudLastRef = useRef({ score: -1, points: -1, lives: -1, gameOver: false });
+  const laserAudioCtxRef = useRef(null);
+  const impactAudioCtxRef = useRef(null);
 
   useEffect(() => {
     pressedKeysRef.current = pressedKeys;
   }, [pressedKeys]);
+
+  const playLaserSound = () => {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+
+    if (!laserAudioCtxRef.current) laserAudioCtxRef.current = new Ctx();
+    const ctx = laserAudioCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1320, now);
+    osc.frequency.exponentialRampToValueAtTime(360, now + 0.08);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.05, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.095);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.1);
+  };
+
+  const playImpactSound = () => {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+
+    if (!impactAudioCtxRef.current) impactAudioCtxRef.current = new Ctx();
+    const ctx = impactAudioCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const now = ctx.currentTime;
+    const noise = ctx.createBufferSource();
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * 0.08, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * 0.6;
+    noise.buffer = buffer;
+
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(1100, now);
+    bp.Q.setValueAtTime(1.2, now);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.22, now + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+
+    noise.connect(bp);
+    bp.connect(gain);
+    gain.connect(ctx.destination);
+    noise.start(now);
+    noise.stop(now + 0.095);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -103,6 +168,11 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
     spawnTimerRef.current = 0;
     shootCooldownRef.current = 0;
     scoreRef.current = 0;
+    pointsRef.current = 0;
+    livesRef.current = 3;
+    invulnRef.current = 0;
+    gameOverRef.current = false;
+    hudLastRef.current = { score: -1, points: -1, lives: -1, gameOver: false };
 
     window.addEventListener('resize', fit);
 
@@ -111,10 +181,20 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
       const cw = Math.max(1, Math.floor(canvas.clientWidth));
       const ch = Math.max(1, Math.floor(canvas.clientHeight));
       if (canvas.width !== cw || canvas.height !== ch) {
+        const prevW = canvas.width;
+        const prevH = canvas.height;
+
         canvas.width = cw;
         canvas.height = ch;
-        shipRef.current.x = clamp(shipRef.current.x || cw / 2, shipRef.current.radius, cw - shipRef.current.radius);
-        shipRef.current.y = clamp(shipRef.current.y || ch / 2, shipRef.current.radius, ch - shipRef.current.radius);
+
+        // If we were in tiny hidden-size canvas (1x1-ish), re-center when real size appears.
+        if (prevW <= 2 || prevH <= 2) {
+          shipRef.current.x = cw / 2;
+          shipRef.current.y = ch / 2;
+        } else {
+          shipRef.current.x = clamp(shipRef.current.x, shipRef.current.radius, cw - shipRef.current.radius);
+          shipRef.current.y = clamp(shipRef.current.y, shipRef.current.radius, ch - shipRef.current.radius);
+        }
       }
 
       const prev = lastTimeRef.current || ts;
@@ -124,6 +204,9 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
       const keys = pressedKeysRef.current;
       const ship = shipRef.current;
       const vel = velocityRef.current;
+      const isGameOver = gameOverRef.current;
+
+      invulnRef.current = Math.max(0, invulnRef.current - dt);
 
       // Heavier momentum tuning.
       const maxSpeed = 560;
@@ -138,7 +221,7 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
       if (keys.has('↑')) iy -= 1;
       if (keys.has('↓')) iy += 1;
 
-      if (ix || iy) {
+      if (!isGameOver && (ix || iy)) {
         const len = Math.hypot(ix, iy) || 1;
         ix /= len;
         iy /= len;
@@ -163,18 +246,20 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
         ship.angle += clamp(diff, -maxStep, maxStep);
       }
 
-      vel.x *= drag;
-      vel.y *= drag;
+      if (!isGameOver) {
+        vel.x *= drag;
+        vel.y *= drag;
 
-      ship.x += vel.x * dt;
-      ship.y += vel.y * dt;
+        ship.x += vel.x * dt;
+        ship.y += vel.y * dt;
 
-      ship.x = clamp(ship.x, ship.radius, canvas.width - ship.radius);
-      ship.y = clamp(ship.y, ship.radius, canvas.height - ship.radius);
+        ship.x = clamp(ship.x, ship.radius, canvas.width - ship.radius);
+        ship.y = clamp(ship.y, ship.radius, canvas.height - ship.radius);
+      }
 
-      // Shoot (E)
+      // Shoot (Space)
       shootCooldownRef.current -= dt;
-      if (keys.has('␣') && shootCooldownRef.current <= 0) {
+      if (!isGameOver && keys.has('␣') && shootCooldownRef.current <= 0) {
         const shotSpeed = 720;
         const dirX = Math.cos(ship.angle - Math.PI / 2);
         const dirY = Math.sin(ship.angle - Math.PI / 2);
@@ -187,6 +272,7 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
             vy: dirY * shotSpeed,
             radius: 2,
           });
+          playLaserSound();
         }
 
         shootCooldownRef.current = 0.16;
@@ -194,7 +280,7 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
 
       // Spawn asteroids
       spawnTimerRef.current -= dt;
-      if (spawnTimerRef.current <= 0) {
+      if (!isGameOver && spawnTimerRef.current <= 0) {
         if (asteroidsRef.current.length < 18) {
           asteroidsRef.current.push(makeAsteroid(canvas.width, canvas.height, ship.x, ship.y));
         }
@@ -294,6 +380,64 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
         }
       }
 
+      // If invulnerable, gently push overlapping asteroids out of the ship radius
+      // to avoid "stacked overlap" edge-cases.
+      if (invulnRef.current > 0) {
+        for (let ai = 0; ai < asteroidsRef.current.length; ai += 1) {
+          const a = asteroidsRef.current[ai];
+          const dx = a.x - ship.x;
+          const dy = a.y - ship.y;
+          const d = Math.hypot(dx, dy) || 0.0001;
+          const minDist = ship.radius + a.radius + 4;
+          if (d < minDist) {
+            const nx = dx / d;
+            const ny = dy / d;
+            const push = (minDist - d) * 0.85;
+            a.x += nx * push;
+            a.y += ny * push;
+            a.vx += nx * 40;
+            a.vy += ny * 40;
+          }
+        }
+      }
+
+      // Ship vs asteroid collisions (3 hearts + 3s invulnerability)
+      if (!isGameOver && invulnRef.current <= 0) {
+        for (let ai = asteroidsRef.current.length - 1; ai >= 0; ai -= 1) {
+          const a = asteroidsRef.current[ai];
+          const dx = ship.x - a.x;
+          const dy = ship.y - a.y;
+          const d = Math.hypot(dx, dy);
+
+          if (d <= ship.radius + a.radius) {
+            asteroidsRef.current.splice(ai, 1);
+            livesRef.current = Math.max(0, livesRef.current - 1);
+            invulnRef.current = 3;
+
+            // small ship-hit burst
+            const burst = 14;
+            for (let p = 0; p < burst; p += 1) {
+              const ang = rand(0, Math.PI * 2);
+              const spd = rand(80, 220);
+              particlesRef.current.push({
+                x: ship.x,
+                y: ship.y,
+                vx: Math.cos(ang) * spd,
+                vy: Math.sin(ang) * spd,
+                life: rand(0.15, 0.32),
+                maxLife: 0.32,
+                size: Math.random() < 0.5 ? 1 : 2,
+              });
+            }
+
+            if (livesRef.current <= 0) {
+              gameOverRef.current = true;
+            }
+            break;
+          }
+        }
+      }
+
       // Bullet vs asteroid collisions
       for (let bi = bulletsRef.current.length - 1; bi >= 0; bi -= 1) {
         const b = bulletsRef.current[bi];
@@ -309,6 +453,8 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
             asteroidsRef.current.splice(ai, 1);
             hit = true;
             scoreRef.current += Math.round(1000 / Math.max(10, a.radius));
+            pointsRef.current += 10;
+            playImpactSound();
 
             // Impact particles (white pixel burst)
             const burst = Math.floor(rand(8, 14));
@@ -346,6 +492,23 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
         if (p.life <= 0) particlesRef.current.splice(i, 1);
       }
 
+      const hudNow = {
+        score: scoreRef.current,
+        points: pointsRef.current,
+        lives: livesRef.current,
+        gameOver: gameOverRef.current,
+      };
+      if (
+        onHudUpdate &&
+        (hudNow.score !== hudLastRef.current.score ||
+          hudNow.points !== hudLastRef.current.points ||
+          hudNow.lives !== hudLastRef.current.lives ||
+          hudNow.gameOver !== hudLastRef.current.gameOver)
+      ) {
+        hudLastRef.current = hudNow;
+        onHudUpdate(hudNow);
+      }
+
       // Draw
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -354,18 +517,21 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
       ctx.fillStyle = '#fff';
       ctx.lineWidth = 1.4;
 
-      // Ship (triangle-ish)
-      ctx.save();
-      ctx.translate(Math.round(ship.x), Math.round(ship.y));
-      ctx.rotate(ship.angle);
-      ctx.beginPath();
-      ctx.moveTo(0, -13);
-      ctx.lineTo(9, 9);
-      ctx.lineTo(0, 5);
-      ctx.lineTo(-9, 9);
-      ctx.closePath();
-      ctx.stroke();
-      ctx.restore();
+      // Ship (triangle-ish) with invulnerability blink
+      const blinkVisible = invulnRef.current <= 0 || Math.floor(ts / 120) % 2 === 0;
+      if (blinkVisible) {
+        ctx.save();
+        ctx.translate(Math.round(ship.x), Math.round(ship.y));
+        ctx.rotate(ship.angle);
+        ctx.beginPath();
+        ctx.moveTo(0, -13);
+        ctx.lineTo(9, 9);
+        ctx.lineTo(0, 5);
+        ctx.lineTo(-9, 9);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      }
 
       // Bullets
       bulletsRef.current.forEach((b) => {
@@ -396,11 +562,20 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
         ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
       });
 
-      // HUD
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px monospace';
-      ctx.fillText(`SCORE: ${scoreRef.current}`, 14, 22);
-      ctx.fillText('MOVE: WASD/ARROWS  •  SPACE: SHOOT  •  Q: DODGE (next)', 14, 40);
+      if (gameOverRef.current) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#000';
+        ctx.fillRect((canvas.width / 2) - 150, (canvas.height / 2) - 44, 300, 88);
+        ctx.strokeStyle = '#fff';
+        ctx.strokeRect((canvas.width / 2) - 150, (canvas.height / 2) - 44, 300, 88);
+
+        ctx.fillStyle = '#fff';
+        ctx.font = '16px monospace';
+        ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 8);
+        ctx.font = '11px monospace';
+        ctx.fillText('PRESS ESC TO EXIT', canvas.width / 2, canvas.height / 2 + 16);
+        ctx.textAlign = 'left';
+      }
 
       rafRef.current = requestAnimationFrame(step);
     };
@@ -412,7 +587,7 @@ function AsteroidsMini({ isGameMode, pressedKeys }) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       lastTimeRef.current = 0;
     };
-  }, [isGameMode]);
+  }, [isGameMode, onHudUpdate]);
 
   return (
     <canvas

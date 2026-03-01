@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import Compiler from "./Compiler";
 import { motion } from 'framer-motion';
 import Transition from '../../Transition';
@@ -18,12 +18,31 @@ function Base() {
   const trackpadRef = useRef(null);
   const popupRef = useRef(null);
   const gameScreenRef = useRef(null);
+  const leftPanelRef = useRef(null);
+  const rightPanelRef = useRef(null);
+  const exitOverlayRef = useRef(null);
+  const glitchBarRefs = useRef([]);
+  const glitchTimersRef = useRef([]);
   const gameModeAnimatedRef = useRef(false);
+  const isExitingGameRef = useRef(false);
 
   const [isPlus, setPlus] = useState(null);
   const [isHelp, setHelp] = useState(false);
   const [isGameMode, setGameMode] = useState(false);
   const [pressedKeys, setPressedKeys] = useState(new Set());
+  const [gameHud, setGameHud] = useState({ score: 0, points: 0, lives: 3, gameOver: false });
+  const [flashRed, setFlashRed] = useState(false);
+  const [buttonPressed, setButtonPressed] = useState(false);
+  const [playerName, setPlayerName] = useState('');
+  const [nameDraft, setNameDraft] = useState('');
+  const [showNameTray, setShowNameTray] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [showExitWarning, setShowExitWarning] = useState(false);
+  const [highScore, setHighScore] = useState(0);
+  const [redeemPoints, setRedeemPoints] = useState(0);
+  const runPointsSeenRef = useRef(0);
+  const alarmAudioCtxRef = useRef(null);
 
 
   const triggerPopup = () => {
@@ -68,6 +87,40 @@ function Base() {
   };
 
   useEffect(() => {
+    const savedName = localStorage.getItem('homepageGamePlayerName') || '';
+    const savedHighScore = Number(localStorage.getItem('homepageGameHighScore') || 0);
+    const savedRedeemPoints = Number(localStorage.getItem('homepageGameRedeemPoints') || 0);
+    setPlayerName(savedName);
+    setNameDraft(savedName);
+    setHighScore(Number.isFinite(savedHighScore) ? savedHighScore : 0);
+    setRedeemPoints(Number.isFinite(savedRedeemPoints) ? savedRedeemPoints : 0);
+  }, []);
+
+  const handleHudUpdate = useCallback((nextHud) => {
+    setGameHud(nextHud);
+
+    const runPointsNow = nextHud.points || 0;
+    const gainedPoints = Math.max(0, runPointsNow - runPointsSeenRef.current);
+    runPointsSeenRef.current = runPointsNow;
+
+    if (gainedPoints > 0) {
+      setRedeemPoints((prev) => {
+        const next = prev + gainedPoints;
+        localStorage.setItem('homepageGameRedeemPoints', String(next));
+        return next;
+      });
+    }
+
+    setHighScore((prevHigh) => {
+      if (nextHud.score > prevHigh) {
+        localStorage.setItem('homepageGameHighScore', String(nextHud.score));
+        return nextHud.score;
+      }
+      return prevHigh;
+    });
+  }, []);
+
+  useEffect(() => {
     if (isPlus) {
       gsap.fromTo(
         baseRefs.current[0],
@@ -79,11 +132,6 @@ function Base() {
         { scale: 0, opacity: 0, transformOrigin: 'bottom right' },
         { scale: 1, opacity: 1, duration: 2, ease: 'power4.out' }
       );
-      gsap.fromTo(
-        baseRefs.current[2],
-        { scale: 0, opacity: 0, transformOrigin: 'top' },
-        { scale: 1, opacity: 1, duration: 2, ease: 'power4.out' }
-      );
       gsap.from(
         baseRefs.current[3],
         {
@@ -91,11 +139,6 @@ function Base() {
           ease: 'power4.out',
           duration: 1.7,
         },
-      );
-      gsap.fromTo(
-        trackpadRef.current,
-        { scale: 0, opacity: 0, transformOrigin: 'center' },
-        { scale: 1, opacity: 1, duration: 2, ease: 'power4.out' }
       );
       gsap.fromTo(
         baseRefs.current[4],
@@ -143,6 +186,14 @@ function Base() {
         xPercent: -50,
         yPercent: -50,
       });
+    }
+
+    if (leftPanelRef.current) {
+      gsap.set(leftPanelRef.current, { x: '36vw', scale: 0.62, autoAlpha: 0, transformOrigin: 'right center' });
+    }
+
+    if (rightPanelRef.current) {
+      gsap.set(rightPanelRef.current, { x: '-36vw', scale: 0.62, autoAlpha: 0, transformOrigin: 'left center' });
     }
 
     tl.to('.infobox > *:not(.game-key-label), .compiler > *:not(.game-key-label)', {
@@ -280,7 +331,22 @@ function Base() {
   }, [isGameMode]);
 
   useEffect(() => {
-    if (!isGameMode) return;
+    if (!isGameMode || gameStarted) return;
+
+    const onMenuKeyDown = (e) => {
+      const k = e.key.toLowerCase();
+      if (k === ' ' || k === 'spacebar' || k === 'space') {
+        e.preventDefault();
+        requestStartGame();
+      }
+    };
+
+    window.addEventListener('keydown', onMenuKeyDown);
+    return () => window.removeEventListener('keydown', onMenuKeyDown);
+  }, [isGameMode, gameStarted, playerName]);
+
+  useEffect(() => {
+    if (!isGameMode || !gameStarted) return;
 
     const mapKey = (key) => {
       const k = key.toLowerCase();
@@ -294,12 +360,27 @@ function Base() {
     };
 
     const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (isPaused) {
+          exitGameModeToHome();
+        } else {
+          setIsPaused(true);
+          setPressedKeys(new Set());
+        }
+        return;
+      }
+
+      if (isPaused) return;
+
       const mapped = mapKey(e.key);
       if (!mapped) return;
       setPressedKeys((prev) => new Set(prev).add(mapped));
     };
 
     const onKeyUp = (e) => {
+      if (isPaused) return;
+
       const mapped = mapKey(e.key);
       if (!mapped) return;
       setPressedKeys((prev) => {
@@ -321,7 +402,7 @@ function Base() {
       window.removeEventListener('blur', onBlur);
       setPressedKeys(new Set());
     };
-  }, [isGameMode]);
+  }, [isGameMode, gameStarted, isPaused]);
 
   useEffect(() => {
     if (!isGameMode) return;
@@ -337,7 +418,7 @@ function Base() {
   }, [pressedKeys, isGameMode]);
 
   useEffect(() => {
-    if (!isGameMode) return;
+    if (!isGameMode || !gameStarted || isPaused) return;
 
     const keyEls = Array.from(document.querySelectorAll('.game-key'));
     const disposers = [];
@@ -371,15 +452,282 @@ function Base() {
     });
 
     return () => disposers.forEach((fn) => fn());
+  }, [isGameMode, gameStarted, isPaused]);
+
+  useEffect(() => {
+    if (!isGameMode || isExitingGameRef.current) return;
+
+    const tl = gsap.timeline({ defaults: { ease: 'power3.inOut' } });
+
+    if (gameStarted) {
+      if (leftPanelRef.current) {
+        gsap.set(leftPanelRef.current, { autoAlpha: 1, x: '36vw', scale: 0.62, transformOrigin: 'right center' });
+        tl.to(leftPanelRef.current, {
+          x: '0vw',
+          duration: 1.05,
+          ease: 'power2.out',
+        }, 0)
+        .to(leftPanelRef.current, {
+          scale: 1,
+          duration: 0.42,
+          ease: 'power2.out',
+        }, 1.05);
+      }
+
+      if (rightPanelRef.current) {
+        gsap.set(rightPanelRef.current, { autoAlpha: 1, x: '-36vw', scale: 0.62, transformOrigin: 'left center' });
+        tl.to(rightPanelRef.current, {
+          x: '0vw',
+          duration: 1.05,
+          ease: 'power2.out',
+        }, 0)
+        .to(rightPanelRef.current, {
+          scale: 1,
+          duration: 0.42,
+          ease: 'power2.out',
+        }, 1.05);
+      }
+    } else {
+      if (leftPanelRef.current) {
+        tl.to(leftPanelRef.current, {
+          scale: 0.62,
+          duration: 0.34,
+          ease: 'power2.inOut',
+        }, 0)
+        .to(leftPanelRef.current, {
+          x: '36vw',
+          autoAlpha: 0,
+          duration: 0.74,
+          ease: 'power2.inOut',
+        }, 0.34);
+      }
+
+      if (rightPanelRef.current) {
+        tl.to(rightPanelRef.current, {
+          scale: 0.62,
+          duration: 0.34,
+          ease: 'power2.inOut',
+        }, 0)
+        .to(rightPanelRef.current, {
+          x: '-36vw',
+          autoAlpha: 0,
+          duration: 0.74,
+          ease: 'power2.inOut',
+        }, 0.34);
+      }
+    }
+  }, [isGameMode, gameStarted]);
+
+  useEffect(() => {
+    const bars = glitchBarRefs.current.filter(Boolean);
+    if (!bars.length) return;
+
+    glitchTimersRef.current.forEach((t) => clearTimeout(t));
+    glitchTimersRef.current = [];
+
+    bars.forEach((bar) => {
+      gsap.set(bar, { autoAlpha: 0, x: 0 });
+
+      const pulse = () => {
+        const waitMs = 900 + Math.random() * 5200;
+        const timer = setTimeout(() => {
+          const flashes = 1 + Math.floor(Math.random() * 3);
+          const tl = gsap.timeline({
+            onComplete: pulse,
+          });
+
+          for (let i = 0; i < flashes; i += 1) {
+            const hold = 0.04 + Math.random() * 0.16;
+            const drift = (Math.random() - 0.5) * 18;
+            const settle = (Math.random() - 0.5) * 6;
+
+            tl.to(bar, {
+              autoAlpha: 0.35 + Math.random() * 0.45,
+              x: drift,
+              duration: 0.012,
+              ease: 'none',
+            })
+            .to(bar, {
+              x: settle,
+              duration: hold,
+              ease: 'none',
+            })
+            .to(bar, {
+              autoAlpha: 0,
+              duration: 0.018,
+              ease: 'none',
+            }, '+=0.008');
+          }
+        }, waitMs);
+
+        glitchTimersRef.current.push(timer);
+      };
+
+      pulse();
+    });
+
+    return () => {
+      glitchTimersRef.current.forEach((t) => clearTimeout(t));
+      glitchTimersRef.current = [];
+      bars.forEach((bar) => gsap.set(bar, { autoAlpha: 0, x: 0 }));
+    };
   }, [isGameMode]);
+
+  const playAlarmSound = () => {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+
+    if (!alarmAudioCtxRef.current) alarmAudioCtxRef.current = new Ctx();
+    const ctx = alarmAudioCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const now = ctx.currentTime;
+    for (let i = 0; i < 6; i += 1) {
+      const t = now + i * 0.32;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(690, t);
+      osc.frequency.exponentialRampToValueAtTime(510, t + 0.24);
+
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.08, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.28);
+    }
+  };
+
+  function requestStartGame() {
+    if (playerName?.trim()) {
+      setShowNameTray(false);
+      setIsPaused(false);
+      runPointsSeenRef.current = 0;
+      setGameHud({ score: 0, points: 0, lives: 3, gameOver: false });
+      setGameStarted(true);
+      return;
+    }
+    setShowNameTray(true);
+  }
+
+  const handleSaveNameAndStart = () => {
+    const finalName = nameDraft.trim();
+    if (!finalName) return;
+
+    setPlayerName(finalName);
+    localStorage.setItem('homepageGamePlayerName', finalName);
+    setShowNameTray(false);
+    setIsPaused(false);
+    runPointsSeenRef.current = 0;
+    setGameHud({ score: 0, points: 0, lives: 3, gameOver: false });
+    setGameStarted(true);
+  };
+
+  function exitGameModeToHome() {
+    if (isExitingGameRef.current) return;
+    isExitingGameRef.current = true;
+
+    setPressedKeys(new Set());
+    setShowNameTray(false);
+    setGameStarted(false);
+    setIsPaused(false);
+    setShowExitWarning(true);
+
+    const tl = gsap.timeline({
+      defaults: { ease: 'power3.inOut' },
+      onComplete: () => {
+        setShowExitWarning(false);
+        isExitingGameRef.current = false;
+      },
+    });
+
+    if (exitOverlayRef.current) {
+      gsap.set(exitOverlayRef.current, { autoAlpha: 0, backgroundColor: '#3a0001' });
+      tl.to(exitOverlayRef.current, {
+        autoAlpha: 1,
+        duration: 0.34,
+        ease: 'power2.out',
+      }, 0)
+      .to(exitOverlayRef.current, {
+        backgroundColor: '#8d0205',
+        duration: 0.52,
+        ease: 'power2.out',
+      }, 0.08)
+      .to(exitOverlayRef.current, {
+        backgroundColor: '#8d0205',
+        duration: 0.95,
+        ease: 'none',
+      }, 0.64);
+    }
+
+    if (leftPanelRef.current) {
+      tl.to(leftPanelRef.current, {
+        scale: 0.62,
+        duration: 0.28,
+        ease: 'power2.inOut',
+      }, 0.22)
+      .to(leftPanelRef.current, {
+        x: '36vw',
+        autoAlpha: 0,
+        duration: 0.5,
+        ease: 'power2.inOut',
+      }, 0.5);
+    }
+
+    if (rightPanelRef.current) {
+      tl.to(rightPanelRef.current, {
+        scale: 0.62,
+        duration: 0.28,
+        ease: 'power2.inOut',
+      }, 0.22)
+      .to(rightPanelRef.current, {
+        x: '-36vw',
+        autoAlpha: 0,
+        duration: 0.5,
+        ease: 'power2.inOut',
+      }, 0.5);
+    }
+
+    if (exitOverlayRef.current) {
+      tl.to(exitOverlayRef.current, {
+        backgroundColor: '#3a0001',
+        duration: 0.45,
+        ease: 'power2.inOut',
+      }, 1.72)
+      .to(exitOverlayRef.current, {
+        autoAlpha: 0,
+        duration: 0.48,
+        ease: 'power2.inOut',
+      }, 1.92);
+    }
+  }
 
   const enterGameMode = () => {
     if (isGameMode) return;
-    setGameMode(true);
+
+    setButtonPressed(true);
+    playAlarmSound();
+    setFlashRed(true);
+    setShowNameTray(false);
+    setGameStarted(false);
+    setIsPaused(false);
+    setShowExitWarning(false);
+    runPointsSeenRef.current = 0;
+    setGameHud({ score: 0, points: 0, lives: 3, gameOver: false });
+
+    setTimeout(() => {
+      setFlashRed(false);
+      setButtonPressed(false);
+      setGameMode(true);
+    }, 2200);
   };
 
   return (
-    <div className="board" ref={stageRef}>
+    <div className={`board ${flashRed ? 'flash-red' : ''}`} ref={stageRef}>
       <div className='abouts'>
         <div className='col'>
           <div className="line">
@@ -417,11 +765,18 @@ function Base() {
             </motion.div>
 
             <div
-              ref={(el) => infoBoxRefs.current[3] = el}
-              className='infobox AdhdInfo'
-              onClick={enterGameMode}>
-              <h1 ref={(el) => baseRefs.current[2] = el}>ADHD</h1>
-              <div ref={trackpadRef} className='trackpad'></div>
+              ref={(el) => {
+                infoBoxRefs.current[3] = el;
+                trackpadRef.current = el;
+              }}
+              className={`infobox AdhdInfo danger-button ${buttonPressed ? 'is-pressed' : ''}`}
+              onClick={enterGameMode}
+            >
+              <span className='button-label'>
+                <span className='do-word'>DO</span>
+                <span className='not-word'>NOT</span>
+                <span className='touch-word'>TOUCH</span>
+              </span>
             </div>
           </div>
         </div>
@@ -452,8 +807,96 @@ function Base() {
       </div>
 
       <div ref={gameScreenRef} className='game-screen-placeholder'>
-        <div className='game-screen-content'>
-          <AsteroidsMini isGameMode={isGameMode} pressedKeys={pressedKeys} />
+        <div className={`game-screen-content game-layout ${gameStarted ? 'game-live' : 'game-idle'}`}>
+          <div ref={leftPanelRef} className='game-side-panel left-blank-panel'></div>
+
+          <div className='game-main-panel crt-display'>
+            <div className='crt-overlay'></div>
+            <div className='crt-grain'></div>
+            <div className='crt-wave-lines'></div>
+            <div className='crt-glitch-bars'>
+              <span ref={(el) => { glitchBarRefs.current[0] = el; }} className='crt-glitch-bar bar-a'></span>
+              <span ref={(el) => { glitchBarRefs.current[1] = el; }} className='crt-glitch-bar bar-b'></span>
+              <span ref={(el) => { glitchBarRefs.current[2] = el; }} className='crt-glitch-bar bar-c'></span>
+            </div>
+            <div ref={exitOverlayRef} className={`exit-warning-overlay ${showExitWarning ? 'show' : ''}`}>
+              <div className='exit-warning-text'>youll regret this later</div>
+            </div>
+            {gameStarted ? (
+              <>
+                <AsteroidsMini
+                  isGameMode={isGameMode && gameStarted && !isPaused}
+                  pressedKeys={pressedKeys}
+                  onHudUpdate={handleHudUpdate}
+                />
+                {isPaused && (
+                  <div className='pause-overlay'>
+                    <div className='pause-title'>PAUSED</div>
+                    <div className='pause-sub'>Press ESC again to exit</div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className='game-main-menu'>
+                <div className='game-main-menu-title'>RELOADED</div>
+                <div className='game-main-menu-sub'>Press SPACE to start</div>
+              </div>
+            )}
+          </div>
+
+          <div ref={rightPanelRef} className='game-side-panel right-hud-panel'>
+            <div className='hud-row'>PLAYER</div>
+            <div className='hud-value player-name-value'>{playerName || 'Unknown'}</div>
+            <div className='hud-row'>SCORE</div>
+            <div className='hud-value'>{gameHud.score}</div>
+            <div className='hud-row'>POINTS</div>
+            <div className='hud-value points-value'>{redeemPoints}</div>
+            <div className='hud-row'>HIGH SCORE</div>
+            <div className='hud-value'>{highScore}</div>
+            <div className='hud-row'>HEALTH</div>
+            <div className='hud-hearts'>
+              <span className={gameHud.lives >= 1 ? 'heart full' : 'heart empty'}>♥</span>{' '}
+              <span className={gameHud.lives >= 2 ? 'heart full' : 'heart empty'}>♥</span>{' '}
+              <span className={gameHud.lives >= 3 ? 'heart full' : 'heart empty'}>♥</span>
+            </div>
+
+            <div className='hud-title keys-title'>KEYBINDS</div>
+            <div className='hud-row small'>MOVE: WASD / ARROWS</div>
+            <div className='hud-row small'>SHOOT: SPACE</div>
+            <div className='hud-row small'>DODGE: Q (next)</div>
+            <div className='hud-row small'>EXIT: ESC (next)</div>
+            {gameHud.gameOver && <div className='hud-gameover'>GAME OVER</div>}
+          </div>
+        </div>
+
+        <div className={`name-tray ${showNameTray ? 'open' : ''}`}>
+          <div className='name-tray-body'>
+            <div className='name-tray-title'>Enter pilot name</div>
+            <input
+              className='name-tray-input'
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              placeholder='Type your name'
+              maxLength={24}
+            />
+            <div className='name-tray-actions'>
+              <button
+                type='button'
+                className='name-tray-btn secondary'
+                onClick={() => setShowNameTray(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type='button'
+                className='name-tray-btn primary'
+                onClick={handleSaveNameAndStart}
+                disabled={!nameDraft.trim()}
+              >
+                Save & Start
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

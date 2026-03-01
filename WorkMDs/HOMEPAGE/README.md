@@ -3,6 +3,7 @@
 ## Entry
 - Route: `/`
 - File: `src/components/Homepage/Base.js`
+- Roadmap: `WorkMDs/HOMEPAGE/ROADMAP.md`
 
 ## Main responsibility
 Composes draggable info panels + compiler command surface for site exploration.
