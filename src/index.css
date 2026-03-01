@@ -740,7 +740,7 @@ body{
 
 .game-layout{
   display: grid;
-  grid-template-columns: 10% 1fr 14%;
+  grid-template-columns: 12% 1fr 12%;
   gap: 0.55vw;
   padding: 0.55vw;
   box-sizing: border-box;

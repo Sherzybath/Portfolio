@@ -54,7 +54,7 @@ function makeAsteroid(width, height, shipX, shipY) {
   };
 }
 
-function AsteroidsMini({ isGameMode, pressedKeys, onHudUpdate }) {
+function AsteroidsMini({ isGameMode, isPaused = false, pressedKeys, onHudUpdate }) {
   const canvasRef = useRef(null);
 
   const shipRef = useRef({ x: 0, y: 0, angle: -Math.PI / 2, radius: 13 });
@@ -65,6 +65,7 @@ function AsteroidsMini({ isGameMode, pressedKeys, onHudUpdate }) {
   const particlesRef = useRef([]);
 
   const pressedKeysRef = useRef(new Set());
+  const isPausedRef = useRef(false);
   const lastTimeRef = useRef(0);
   const rafRef = useRef(null);
 
@@ -82,6 +83,10 @@ function AsteroidsMini({ isGameMode, pressedKeys, onHudUpdate }) {
   useEffect(() => {
     pressedKeysRef.current = pressedKeys;
   }, [pressedKeys]);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
 
   const playLaserSound = () => {
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -206,307 +211,309 @@ function AsteroidsMini({ isGameMode, pressedKeys, onHudUpdate }) {
       const vel = velocityRef.current;
       const isGameOver = gameOverRef.current;
 
-      invulnRef.current = Math.max(0, invulnRef.current - dt);
+      if (!isPausedRef.current) {
+        invulnRef.current = Math.max(0, invulnRef.current - dt);
 
-      // Heavier momentum tuning.
-      const maxSpeed = 560;
-      const accel = 640;
-      const drag = 0.991;
+        // Heavier momentum tuning.
+        const maxSpeed = 560;
+        const accel = 640;
+        const drag = 0.991;
 
-      let ix = 0;
-      let iy = 0;
+        let ix = 0;
+        let iy = 0;
 
-      if (keys.has('←')) ix -= 1;
-      if (keys.has('→')) ix += 1;
-      if (keys.has('↑')) iy -= 1;
-      if (keys.has('↓')) iy += 1;
+        if (keys.has('←')) ix -= 1;
+        if (keys.has('→')) ix += 1;
+        if (keys.has('↑')) iy -= 1;
+        if (keys.has('↓')) iy += 1;
 
-      if (!isGameOver && (ix || iy)) {
-        const len = Math.hypot(ix, iy) || 1;
-        ix /= len;
-        iy /= len;
+        if (!isGameOver && (ix || iy)) {
+          const len = Math.hypot(ix, iy) || 1;
+          ix /= len;
+          iy /= len;
 
-        vel.x += ix * accel * dt;
-        vel.y += iy * accel * dt;
+          vel.x += ix * accel * dt;
+          vel.y += iy * accel * dt;
 
-        const vLen = Math.hypot(vel.x, vel.y);
-        if (vLen > maxSpeed) {
-          vel.x = (vel.x / vLen) * maxSpeed;
-          vel.y = (vel.y / vLen) * maxSpeed;
+          const vLen = Math.hypot(vel.x, vel.y);
+          if (vLen > maxSpeed) {
+            vel.x = (vel.x / vLen) * maxSpeed;
+            vel.y = (vel.y / vLen) * maxSpeed;
+          }
+
+          // Weighted turning: rotate toward target direction instead of snapping instantly.
+          const targetAngle = Math.atan2(iy, ix) + Math.PI / 2;
+          let diff = targetAngle - ship.angle;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+
+          const turnRate = 4.1; // radians/sec
+          const maxStep = turnRate * dt;
+          ship.angle += clamp(diff, -maxStep, maxStep);
         }
 
-        // Weighted turning: rotate toward target direction instead of snapping instantly.
-        const targetAngle = Math.atan2(iy, ix) + Math.PI / 2;
-        let diff = targetAngle - ship.angle;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
+        if (!isGameOver) {
+          vel.x *= drag;
+          vel.y *= drag;
 
-        const turnRate = 4.1; // radians/sec
-        const maxStep = turnRate * dt;
-        ship.angle += clamp(diff, -maxStep, maxStep);
-      }
+          ship.x += vel.x * dt;
+          ship.y += vel.y * dt;
 
-      if (!isGameOver) {
-        vel.x *= drag;
-        vel.y *= drag;
-
-        ship.x += vel.x * dt;
-        ship.y += vel.y * dt;
-
-        ship.x = clamp(ship.x, ship.radius, canvas.width - ship.radius);
-        ship.y = clamp(ship.y, ship.radius, canvas.height - ship.radius);
-      }
-
-      // Shoot (Space)
-      shootCooldownRef.current -= dt;
-      if (!isGameOver && keys.has('␣') && shootCooldownRef.current <= 0) {
-        const shotSpeed = 720;
-        const dirX = Math.cos(ship.angle - Math.PI / 2);
-        const dirY = Math.sin(ship.angle - Math.PI / 2);
-
-        if (bulletsRef.current.length < 36) {
-          bulletsRef.current.push({
-            x: ship.x + dirX * 14,
-            y: ship.y + dirY * 14,
-            vx: dirX * shotSpeed,
-            vy: dirY * shotSpeed,
-            radius: 2,
-          });
-          playLaserSound();
+          ship.x = clamp(ship.x, ship.radius, canvas.width - ship.radius);
+          ship.y = clamp(ship.y, ship.radius, canvas.height - ship.radius);
         }
 
-        shootCooldownRef.current = 0.16;
-      }
+        // Shoot (Space)
+        shootCooldownRef.current -= dt;
+        if (!isGameOver && keys.has('␣') && shootCooldownRef.current <= 0) {
+          const shotSpeed = 720;
+          const dirX = Math.cos(ship.angle - Math.PI / 2);
+          const dirY = Math.sin(ship.angle - Math.PI / 2);
 
-      // Spawn asteroids
-      spawnTimerRef.current -= dt;
-      if (!isGameOver && spawnTimerRef.current <= 0) {
-        if (asteroidsRef.current.length < 18) {
-          asteroidsRef.current.push(makeAsteroid(canvas.width, canvas.height, ship.x, ship.y));
+          if (bulletsRef.current.length < 36) {
+            bulletsRef.current.push({
+              x: ship.x + dirX * 14,
+              y: ship.y + dirY * 14,
+              vx: dirX * shotSpeed,
+              vy: dirY * shotSpeed,
+              radius: 2,
+            });
+            playLaserSound();
+          }
+
+          shootCooldownRef.current = 0.16;
         }
-        spawnTimerRef.current = rand(0.6, 1.2);
-      }
 
-      // Update bullets
-      for (let i = bulletsRef.current.length - 1; i >= 0; i -= 1) {
-        const b = bulletsRef.current[i];
-        b.x += b.vx * dt;
-        b.y += b.vy * dt;
-        if (
-          b.x < 0 || b.x > canvas.width ||
-          b.y < 0 || b.y > canvas.height
-        ) {
-          bulletsRef.current.splice(i, 1);
+        // Spawn asteroids
+        spawnTimerRef.current -= dt;
+        if (!isGameOver && spawnTimerRef.current <= 0) {
+          if (asteroidsRef.current.length < 18) {
+            asteroidsRef.current.push(makeAsteroid(canvas.width, canvas.height, ship.x, ship.y));
+          }
+          spawnTimerRef.current = rand(0.6, 1.2);
         }
-      }
 
-      // Update asteroids (home toward ship)
-      for (let i = asteroidsRef.current.length - 1; i >= 0; i -= 1) {
-        const a = asteroidsRef.current[i];
-
-        const dx = ship.x - a.x;
-        const dy = ship.y - a.y;
-        const d = Math.hypot(dx, dy) || 1;
-        const nx = dx / d;
-        const ny = dy / d;
-
-        const targetVx = nx * a.speed;
-        const targetVy = ny * a.speed;
-        const steer = 0.9 * dt;
-
-        a.vx += (targetVx - a.vx) * steer;
-        a.vy += (targetVy - a.vy) * steer;
-
-        a.x += a.vx * dt;
-        a.y += a.vy * dt;
-        a.rot += a.spin * dt;
-
-        if (a.x < -80 || a.x > canvas.width + 80 || a.y < -80 || a.y > canvas.height + 80) {
-          asteroidsRef.current.splice(i, 1);
-        }
-      }
-
-      // Asteroid vs asteroid collisions (elastic-ish bounce + overlap separation)
-      const ast = asteroidsRef.current;
-      for (let i = 0; i < ast.length; i += 1) {
-        for (let j = i + 1; j < ast.length; j += 1) {
-          const a = ast[i];
-          const b = ast[j];
-
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const dist = Math.hypot(dx, dy) || 0.0001;
-          const minDist = a.radius + b.radius;
-
-          if (dist < minDist) {
-            const nx = dx / dist;
-            const ny = dy / dist;
-
-            // Separate overlap to avoid sticking/merging
-            const overlap = (minDist - dist) * 0.5;
-            a.x -= nx * overlap;
-            a.y -= ny * overlap;
-            b.x += nx * overlap;
-            b.y += ny * overlap;
-
-            // Relative velocity along normal
-            const rvx = b.vx - a.vx;
-            const rvy = b.vy - a.vy;
-            const velAlongNormal = rvx * nx + rvy * ny;
-
-            // If moving apart after separation, skip impulse
-            if (velAlongNormal > 0) continue;
-
-            // Mass by area-ish (radius^2), restitution slightly inelastic
-            const ma = Math.max(1, a.radius * a.radius);
-            const mb = Math.max(1, b.radius * b.radius);
-            const invMa = 1 / ma;
-            const invMb = 1 / mb;
-            const restitution = 0.86;
-
-            const impulse = (-(1 + restitution) * velAlongNormal) / (invMa + invMb);
-            const ix = impulse * nx;
-            const iy = impulse * ny;
-
-            a.vx -= ix * invMa;
-            a.vy -= iy * invMa;
-            b.vx += ix * invMb;
-            b.vy += iy * invMb;
-
-            // Tiny spin kick for visual feedback
-            a.spin += rand(-0.12, 0.12);
-            b.spin += rand(-0.12, 0.12);
+        // Update bullets
+        for (let i = bulletsRef.current.length - 1; i >= 0; i -= 1) {
+          const b = bulletsRef.current[i];
+          b.x += b.vx * dt;
+          b.y += b.vy * dt;
+          if (
+            b.x < 0 || b.x > canvas.width ||
+            b.y < 0 || b.y > canvas.height
+          ) {
+            bulletsRef.current.splice(i, 1);
           }
         }
-      }
 
-      // If invulnerable, gently push overlapping asteroids out of the ship radius
-      // to avoid "stacked overlap" edge-cases.
-      if (invulnRef.current > 0) {
-        for (let ai = 0; ai < asteroidsRef.current.length; ai += 1) {
-          const a = asteroidsRef.current[ai];
-          const dx = a.x - ship.x;
-          const dy = a.y - ship.y;
-          const d = Math.hypot(dx, dy) || 0.0001;
-          const minDist = ship.radius + a.radius + 4;
-          if (d < minDist) {
-            const nx = dx / d;
-            const ny = dy / d;
-            const push = (minDist - d) * 0.85;
-            a.x += nx * push;
-            a.y += ny * push;
-            a.vx += nx * 40;
-            a.vy += ny * 40;
-          }
-        }
-      }
+        // Update asteroids (home toward ship)
+        for (let i = asteroidsRef.current.length - 1; i >= 0; i -= 1) {
+          const a = asteroidsRef.current[i];
 
-      // Ship vs asteroid collisions (3 hearts + 3s invulnerability)
-      if (!isGameOver && invulnRef.current <= 0) {
-        for (let ai = asteroidsRef.current.length - 1; ai >= 0; ai -= 1) {
-          const a = asteroidsRef.current[ai];
           const dx = ship.x - a.x;
           const dy = ship.y - a.y;
-          const d = Math.hypot(dx, dy);
+          const d = Math.hypot(dx, dy) || 1;
+          const nx = dx / d;
+          const ny = dy / d;
 
-          if (d <= ship.radius + a.radius) {
-            asteroidsRef.current.splice(ai, 1);
-            livesRef.current = Math.max(0, livesRef.current - 1);
-            invulnRef.current = 3;
+          const targetVx = nx * a.speed;
+          const targetVy = ny * a.speed;
+          const steer = 0.9 * dt;
 
-            // small ship-hit burst
-            const burst = 14;
-            for (let p = 0; p < burst; p += 1) {
-              const ang = rand(0, Math.PI * 2);
-              const spd = rand(80, 220);
-              particlesRef.current.push({
-                x: ship.x,
-                y: ship.y,
-                vx: Math.cos(ang) * spd,
-                vy: Math.sin(ang) * spd,
-                life: rand(0.15, 0.32),
-                maxLife: 0.32,
-                size: Math.random() < 0.5 ? 1 : 2,
-              });
-            }
+          a.vx += (targetVx - a.vx) * steer;
+          a.vy += (targetVy - a.vy) * steer;
 
-            if (livesRef.current <= 0) {
-              gameOverRef.current = true;
-            }
-            break;
-          }
-        }
-      }
+          a.x += a.vx * dt;
+          a.y += a.vy * dt;
+          a.rot += a.spin * dt;
 
-      // Bullet vs asteroid collisions
-      for (let bi = bulletsRef.current.length - 1; bi >= 0; bi -= 1) {
-        const b = bulletsRef.current[bi];
-        let hit = false;
-
-        for (let ai = asteroidsRef.current.length - 1; ai >= 0; ai -= 1) {
-          const a = asteroidsRef.current[ai];
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const d = Math.hypot(dx, dy);
-
-          if (d <= b.radius + a.radius) {
-            asteroidsRef.current.splice(ai, 1);
-            hit = true;
-            scoreRef.current += Math.round(1000 / Math.max(10, a.radius));
-            pointsRef.current += 10;
-            playImpactSound();
-
-            // Impact particles (white pixel burst)
-            const burst = Math.floor(rand(8, 14));
-            for (let p = 0; p < burst; p += 1) {
-              const ang = rand(0, Math.PI * 2);
-              const spd = rand(90, 260);
-              particlesRef.current.push({
-                x: b.x,
-                y: b.y,
-                vx: Math.cos(ang) * spd,
-                vy: Math.sin(ang) * spd,
-                life: rand(0.16, 0.34),
-                maxLife: 0.34,
-                size: Math.random() < 0.5 ? 1 : 2,
-              });
-            }
-            if (particlesRef.current.length > 120) {
-              particlesRef.current.splice(0, particlesRef.current.length - 120);
-            }
-            break;
+          if (a.x < -80 || a.x > canvas.width + 80 || a.y < -80 || a.y > canvas.height + 80) {
+            asteroidsRef.current.splice(i, 1);
           }
         }
 
-        if (hit) bulletsRef.current.splice(bi, 1);
-      }
+        // Asteroid vs asteroid collisions (elastic-ish bounce + overlap separation)
+        const ast = asteroidsRef.current;
+        for (let i = 0; i < ast.length; i += 1) {
+          for (let j = i + 1; j < ast.length; j += 1) {
+            const a = ast[i];
+            const b = ast[j];
 
-      // Update particles
-      for (let i = particlesRef.current.length - 1; i >= 0; i -= 1) {
-        const p = particlesRef.current[i];
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        p.vx *= 0.94;
-        p.vy *= 0.94;
-        p.life -= dt;
-        if (p.life <= 0) particlesRef.current.splice(i, 1);
-      }
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const dist = Math.hypot(dx, dy) || 0.0001;
+            const minDist = a.radius + b.radius;
 
-      const hudNow = {
-        score: scoreRef.current,
-        points: pointsRef.current,
-        lives: livesRef.current,
-        gameOver: gameOverRef.current,
-      };
-      if (
-        onHudUpdate &&
-        (hudNow.score !== hudLastRef.current.score ||
-          hudNow.points !== hudLastRef.current.points ||
-          hudNow.lives !== hudLastRef.current.lives ||
-          hudNow.gameOver !== hudLastRef.current.gameOver)
-      ) {
-        hudLastRef.current = hudNow;
-        onHudUpdate(hudNow);
+            if (dist < minDist) {
+              const nx = dx / dist;
+              const ny = dy / dist;
+
+              // Separate overlap to avoid sticking/merging
+              const overlap = (minDist - dist) * 0.5;
+              a.x -= nx * overlap;
+              a.y -= ny * overlap;
+              b.x += nx * overlap;
+              b.y += ny * overlap;
+
+              // Relative velocity along normal
+              const rvx = b.vx - a.vx;
+              const rvy = b.vy - a.vy;
+              const velAlongNormal = rvx * nx + rvy * ny;
+
+              // If moving apart after separation, skip impulse
+              if (velAlongNormal > 0) continue;
+
+              // Mass by area-ish (radius^2), restitution slightly inelastic
+              const ma = Math.max(1, a.radius * a.radius);
+              const mb = Math.max(1, b.radius * b.radius);
+              const invMa = 1 / ma;
+              const invMb = 1 / mb;
+              const restitution = 0.86;
+
+              const impulse = (-(1 + restitution) * velAlongNormal) / (invMa + invMb);
+              const ix = impulse * nx;
+              const iy = impulse * ny;
+
+              a.vx -= ix * invMa;
+              a.vy -= iy * invMa;
+              b.vx += ix * invMb;
+              b.vy += iy * invMb;
+
+              // Tiny spin kick for visual feedback
+              a.spin += rand(-0.12, 0.12);
+              b.spin += rand(-0.12, 0.12);
+            }
+          }
+        }
+
+        // If invulnerable, gently push overlapping asteroids out of the ship radius
+        // to avoid "stacked overlap" edge-cases.
+        if (invulnRef.current > 0) {
+          for (let ai = 0; ai < asteroidsRef.current.length; ai += 1) {
+            const a = asteroidsRef.current[ai];
+            const dx = a.x - ship.x;
+            const dy = a.y - ship.y;
+            const d = Math.hypot(dx, dy) || 0.0001;
+            const minDist = ship.radius + a.radius + 4;
+            if (d < minDist) {
+              const nx = dx / d;
+              const ny = dy / d;
+              const push = (minDist - d) * 0.85;
+              a.x += nx * push;
+              a.y += ny * push;
+              a.vx += nx * 40;
+              a.vy += ny * 40;
+            }
+          }
+        }
+
+        // Ship vs asteroid collisions (3 hearts + 3s invulnerability)
+        if (!isGameOver && invulnRef.current <= 0) {
+          for (let ai = asteroidsRef.current.length - 1; ai >= 0; ai -= 1) {
+            const a = asteroidsRef.current[ai];
+            const dx = ship.x - a.x;
+            const dy = ship.y - a.y;
+            const d = Math.hypot(dx, dy);
+
+            if (d <= ship.radius + a.radius) {
+              asteroidsRef.current.splice(ai, 1);
+              livesRef.current = Math.max(0, livesRef.current - 1);
+              invulnRef.current = 3;
+
+              // small ship-hit burst
+              const burst = 14;
+              for (let p = 0; p < burst; p += 1) {
+                const ang = rand(0, Math.PI * 2);
+                const spd = rand(80, 220);
+                particlesRef.current.push({
+                  x: ship.x,
+                  y: ship.y,
+                  vx: Math.cos(ang) * spd,
+                  vy: Math.sin(ang) * spd,
+                  life: rand(0.15, 0.32),
+                  maxLife: 0.32,
+                  size: Math.random() < 0.5 ? 1 : 2,
+                });
+              }
+
+              if (livesRef.current <= 0) {
+                gameOverRef.current = true;
+              }
+              break;
+            }
+          }
+        }
+
+        // Bullet vs asteroid collisions
+        for (let bi = bulletsRef.current.length - 1; bi >= 0; bi -= 1) {
+          const b = bulletsRef.current[bi];
+          let hit = false;
+
+          for (let ai = asteroidsRef.current.length - 1; ai >= 0; ai -= 1) {
+            const a = asteroidsRef.current[ai];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const d = Math.hypot(dx, dy);
+
+            if (d <= b.radius + a.radius) {
+              asteroidsRef.current.splice(ai, 1);
+              hit = true;
+              scoreRef.current += Math.round(1000 / Math.max(10, a.radius));
+              pointsRef.current += 10;
+              playImpactSound();
+
+              // Impact particles (white pixel burst)
+              const burst = Math.floor(rand(8, 14));
+              for (let p = 0; p < burst; p += 1) {
+                const ang = rand(0, Math.PI * 2);
+                const spd = rand(90, 260);
+                particlesRef.current.push({
+                  x: b.x,
+                  y: b.y,
+                  vx: Math.cos(ang) * spd,
+                  vy: Math.sin(ang) * spd,
+                  life: rand(0.16, 0.34),
+                  maxLife: 0.34,
+                  size: Math.random() < 0.5 ? 1 : 2,
+                });
+              }
+              if (particlesRef.current.length > 120) {
+                particlesRef.current.splice(0, particlesRef.current.length - 120);
+              }
+              break;
+            }
+          }
+
+          if (hit) bulletsRef.current.splice(bi, 1);
+        }
+
+        // Update particles
+        for (let i = particlesRef.current.length - 1; i >= 0; i -= 1) {
+          const p = particlesRef.current[i];
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vx *= 0.94;
+          p.vy *= 0.94;
+          p.life -= dt;
+          if (p.life <= 0) particlesRef.current.splice(i, 1);
+        }
+
+        const hudNow = {
+          score: scoreRef.current,
+          points: pointsRef.current,
+          lives: livesRef.current,
+          gameOver: gameOverRef.current,
+        };
+        if (
+          onHudUpdate &&
+          (hudNow.score !== hudLastRef.current.score ||
+            hudNow.points !== hudLastRef.current.points ||
+            hudNow.lives !== hudLastRef.current.lives ||
+            hudNow.gameOver !== hudLastRef.current.gameOver)
+        ) {
+          hudLastRef.current = hudNow;
+          onHudUpdate(hudNow);
+        }
       }
 
       // Draw

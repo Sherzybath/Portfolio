@@ -8,6 +8,7 @@ import Contacts from './Contacts';
 import Education from './Education';
 import AsteroidsMini from './AsteroidsMini';
 import gsap from 'gsap';
+import escRedscreenSfx from '../../Assets/Audio/esc-redscreen.wav';
 
 function Base() {
   const stageRef = useRef(null);
@@ -39,10 +40,12 @@ function Base() {
   const [gameStarted, setGameStarted] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [showExitWarning, setShowExitWarning] = useState(false);
+  const [exitWarningText, setExitWarningText] = useState('youll regret this later');
   const [highScore, setHighScore] = useState(0);
   const [redeemPoints, setRedeemPoints] = useState(0);
   const runPointsSeenRef = useRef(0);
   const alarmAudioCtxRef = useRef(null);
+  const exitAudioRef = useRef(null);
 
 
   const triggerPopup = () => {
@@ -94,6 +97,20 @@ function Base() {
     setNameDraft(savedName);
     setHighScore(Number.isFinite(savedHighScore) ? savedHighScore : 0);
     setRedeemPoints(Number.isFinite(savedRedeemPoints) ? savedRedeemPoints : 0);
+  }, []);
+
+  useEffect(() => {
+    const audio = new Audio(escRedscreenSfx);
+    audio.preload = 'auto';
+    audio.volume = 0.9;
+    exitAudioRef.current = audio;
+
+    return () => {
+      if (exitAudioRef.current) {
+        exitAudioRef.current.pause();
+        exitAudioRef.current.currentTime = 0;
+      }
+    };
   }, []);
 
   const handleHudUpdate = useCallback((nextHud) => {
@@ -362,8 +379,10 @@ function Base() {
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (isPaused) {
-          exitGameModeToHome();
+        if (gameHud.gameOver) {
+          exitGameModeToHome('Again');
+        } else if (isPaused) {
+          setIsPaused(false);
         } else {
           setIsPaused(true);
           setPressedKeys(new Set());
@@ -371,7 +390,14 @@ function Base() {
         return;
       }
 
-      if (isPaused) return;
+      if (isPaused) {
+        const pausedKey = e.key.toLowerCase();
+        if (pausedKey === 'q') {
+          e.preventDefault();
+          exitGameModeToHome();
+        }
+        return;
+      }
 
       const mapped = mapKey(e.key);
       if (!mapped) return;
@@ -402,7 +428,7 @@ function Base() {
       window.removeEventListener('blur', onBlur);
       setPressedKeys(new Set());
     };
-  }, [isGameMode, gameStarted, isPaused]);
+  }, [isGameMode, gameStarted, isPaused, gameHud.gameOver]);
 
   useEffect(() => {
     if (!isGameMode) return;
@@ -627,20 +653,26 @@ function Base() {
     setGameStarted(true);
   };
 
-  function exitGameModeToHome() {
+  function exitGameModeToHome(overrideText = 'youll regret this later') {
     if (isExitingGameRef.current) return;
     isExitingGameRef.current = true;
 
     setPressedKeys(new Set());
     setShowNameTray(false);
-    setGameStarted(false);
-    setIsPaused(false);
+    setExitWarningText(overrideText);
     setShowExitWarning(true);
+
+    if (exitAudioRef.current) {
+      exitAudioRef.current.pause();
+      exitAudioRef.current.currentTime = 0;
+      exitAudioRef.current.play().catch(() => {});
+    }
 
     const tl = gsap.timeline({
       defaults: { ease: 'power3.inOut' },
       onComplete: () => {
         setShowExitWarning(false);
+        setExitWarningText('youll regret this later');
         isExitingGameRef.current = false;
       },
     });
@@ -663,6 +695,13 @@ function Base() {
         ease: 'none',
       }, 0.64);
     }
+
+    tl.call(() => {
+      setGameStarted(false);
+      setIsPaused(false);
+      runPointsSeenRef.current = 0;
+      setGameHud({ score: 0, points: 0, lives: 3, gameOver: false });
+    }, [], 0.66);
 
     if (leftPanelRef.current) {
       tl.to(leftPanelRef.current, {
@@ -820,19 +859,20 @@ function Base() {
               <span ref={(el) => { glitchBarRefs.current[2] = el; }} className='crt-glitch-bar bar-c'></span>
             </div>
             <div ref={exitOverlayRef} className={`exit-warning-overlay ${showExitWarning ? 'show' : ''}`}>
-              <div className='exit-warning-text'>youll regret this later</div>
+              <div className='exit-warning-text'>{exitWarningText}</div>
             </div>
             {gameStarted ? (
               <>
                 <AsteroidsMini
-                  isGameMode={isGameMode && gameStarted && !isPaused}
+                  isGameMode={isGameMode && gameStarted}
+                  isPaused={isPaused}
                   pressedKeys={pressedKeys}
                   onHudUpdate={handleHudUpdate}
                 />
                 {isPaused && (
                   <div className='pause-overlay'>
                     <div className='pause-title'>PAUSED</div>
-                    <div className='pause-sub'>Press ESC again to exit</div>
+                    <div className='pause-sub'>Press ESC to resume · Press Q to exit</div>
                   </div>
                 )}
               </>
@@ -863,8 +903,8 @@ function Base() {
             <div className='hud-title keys-title'>KEYBINDS</div>
             <div className='hud-row small'>MOVE: WASD / ARROWS</div>
             <div className='hud-row small'>SHOOT: SPACE</div>
-            <div className='hud-row small'>DODGE: Q (next)</div>
-            <div className='hud-row small'>EXIT: ESC (next)</div>
+            <div className='hud-row small'>DODGE: Q</div>
+            <div className='hud-row small'>EXIT: ESC → pause, then Q</div>
             {gameHud.gameOver && <div className='hud-gameover'>GAME OVER</div>}
           </div>
         </div>
