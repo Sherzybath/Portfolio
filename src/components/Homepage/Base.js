@@ -23,6 +23,7 @@ function Base() {
   const rightPanelRef = useRef(null);
   const exitOverlayRef = useRef(null);
   const glitchBarRefs = useRef([]);
+  const glitchSliceRefs = useRef([]);
   const glitchTimersRef = useRef([]);
   const gameModeAnimatedRef = useRef(false);
   const isExitingGameRef = useRef(false);
@@ -355,6 +356,12 @@ function Base() {
       if (k === ' ' || k === 'spacebar' || k === 'space') {
         e.preventDefault();
         requestStartGame();
+        return;
+      }
+
+      if (k === 'q') {
+        e.preventDefault();
+        exitGameModeToHome();
       }
     };
 
@@ -546,13 +553,15 @@ function Base() {
 
   useEffect(() => {
     const bars = glitchBarRefs.current.filter(Boolean);
-    if (!bars.length) return;
+    const slices = glitchSliceRefs.current.filter(Boolean);
+    const allGlitchEls = [...bars, ...slices];
+    if (!allGlitchEls.length) return;
 
     glitchTimersRef.current.forEach((t) => clearTimeout(t));
     glitchTimersRef.current = [];
 
-    bars.forEach((bar) => {
-      gsap.set(bar, { autoAlpha: 0, x: 0 });
+    allGlitchEls.forEach((el) => {
+      gsap.set(el, { autoAlpha: 0, x: 0, y: 0 });
 
       const pulse = () => {
         const waitMs = 900 + Math.random() * 5200;
@@ -564,21 +573,24 @@ function Base() {
 
           for (let i = 0; i < flashes; i += 1) {
             const hold = 0.04 + Math.random() * 0.16;
-            const drift = (Math.random() - 0.5) * 18;
-            const settle = (Math.random() - 0.5) * 6;
+            const drift = (Math.random() - 0.5) * 12;
+            const settle = (Math.random() - 0.5) * 4;
+            const jitterY = (Math.random() - 0.5) * 1.5;
 
-            tl.to(bar, {
-              autoAlpha: 0.35 + Math.random() * 0.45,
+            tl.to(el, {
+              autoAlpha: 0.16 + Math.random() * 0.22,
               x: drift,
+              y: jitterY,
               duration: 0.012,
               ease: 'none',
             })
-            .to(bar, {
+            .to(el, {
               x: settle,
+              y: 0,
               duration: hold,
               ease: 'none',
             })
-            .to(bar, {
+            .to(el, {
               autoAlpha: 0,
               duration: 0.018,
               ease: 'none',
@@ -595,7 +607,7 @@ function Base() {
     return () => {
       glitchTimersRef.current.forEach((t) => clearTimeout(t));
       glitchTimersRef.current = [];
-      bars.forEach((bar) => gsap.set(bar, { autoAlpha: 0, x: 0 }));
+      allGlitchEls.forEach((el) => gsap.set(el, { autoAlpha: 0, x: 0, y: 0 }));
     };
   }, [isGameMode]);
 
@@ -653,6 +665,53 @@ function Base() {
     setGameStarted(true);
   };
 
+  const restoreBentoFromGameMode = () => {
+    const keyBoxes = [
+      infoBoxRefs.current[0],
+      compilerRef.current,
+      infoBoxRefs.current[1],
+      infoBoxRefs.current[2],
+      infoBoxRefs.current[3],
+      infoBoxRefs.current[4],
+    ].filter(Boolean);
+
+    keyBoxes.forEach((el) => {
+      el.classList.remove('game-key', 'game-key-active');
+      el.removeAttribute('data-key');
+      el.querySelectorAll('.game-key-label, .game-key-ring').forEach((node) => node.remove());
+      gsap.set(el, { clearProps: 'all' });
+    });
+
+    gsap.set('.infobox > *:not(.game-key-label), .compiler > *:not(.game-key-label)', {
+      clearProps: 'opacity,pointerEvents',
+    });
+
+    if (leftPanelRef.current) gsap.set(leftPanelRef.current, { clearProps: 'all' });
+    if (rightPanelRef.current) gsap.set(rightPanelRef.current, { clearProps: 'all' });
+
+    if (gameScreenRef.current) {
+      gsap.set(gameScreenRef.current, {
+        autoAlpha: 0,
+        display: 'none',
+        scale: 1,
+        scaleX: 1,
+        y: 0,
+        xPercent: -50,
+        yPercent: -50,
+        clearProps: 'transformOrigin',
+      });
+    }
+
+    gameModeAnimatedRef.current = false;
+    setPressedKeys(new Set());
+    setShowNameTray(false);
+    setGameStarted(false);
+    setIsPaused(false);
+    runPointsSeenRef.current = 0;
+    setGameHud({ score: 0, points: 0, lives: 3, gameOver: false });
+    setGameMode(false);
+  };
+
   function exitGameModeToHome(overrideText = 'youll regret this later') {
     if (isExitingGameRef.current) return;
     isExitingGameRef.current = true;
@@ -671,8 +730,6 @@ function Base() {
     const tl = gsap.timeline({
       defaults: { ease: 'power3.inOut' },
       onComplete: () => {
-        setShowExitWarning(false);
-        setExitWarningText('youll regret this later');
         isExitingGameRef.current = false;
       },
     });
@@ -696,12 +753,6 @@ function Base() {
       }, 0.64);
     }
 
-    tl.call(() => {
-      setGameStarted(false);
-      setIsPaused(false);
-      runPointsSeenRef.current = 0;
-      setGameHud({ score: 0, points: 0, lives: 3, gameOver: false });
-    }, [], 0.66);
 
     if (leftPanelRef.current) {
       tl.to(leftPanelRef.current, {
@@ -731,17 +782,29 @@ function Base() {
       }, 0.5);
     }
 
+    if (gameScreenRef.current) {
+      tl.to(gameScreenRef.current, {
+        transformOrigin: 'center center',
+        scaleX: 0,
+        duration: 0.42,
+        ease: 'power2.in',
+      }, 1.84);
+    }
+
     if (exitOverlayRef.current) {
       tl.to(exitOverlayRef.current, {
-        backgroundColor: '#3a0001',
+        backgroundColor: '#1a0001',
         duration: 0.45,
         ease: 'power2.inOut',
       }, 1.72)
       .to(exitOverlayRef.current, {
         autoAlpha: 0,
-        duration: 0.48,
+        duration: 0.42,
         ease: 'power2.inOut',
-      }, 1.92);
+      }, 2.04)
+      .call(() => {
+        window.location.reload();
+      }, [], 2.5);
     }
   }
 
@@ -857,6 +920,11 @@ function Base() {
               <span ref={(el) => { glitchBarRefs.current[0] = el; }} className='crt-glitch-bar bar-a'></span>
               <span ref={(el) => { glitchBarRefs.current[1] = el; }} className='crt-glitch-bar bar-b'></span>
               <span ref={(el) => { glitchBarRefs.current[2] = el; }} className='crt-glitch-bar bar-c'></span>
+            </div>
+            <div className='crt-glitch-slices'>
+              <span ref={(el) => { glitchSliceRefs.current[0] = el; }} className='crt-glitch-slice slice-a'></span>
+              <span ref={(el) => { glitchSliceRefs.current[1] = el; }} className='crt-glitch-slice slice-b'></span>
+              <span ref={(el) => { glitchSliceRefs.current[2] = el; }} className='crt-glitch-slice slice-c'></span>
             </div>
             <div ref={exitOverlayRef} className={`exit-warning-overlay ${showExitWarning ? 'show' : ''}`}>
               <div className='exit-warning-text'>{exitWarningText}</div>

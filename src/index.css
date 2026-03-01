@@ -939,20 +939,48 @@ body{
   z-index: 13;
 }
 
-.crt-glitch-bar{
+.crt-glitch-slices{
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 14;
+  opacity: 0.65;
+}
+
+.crt-glitch-bar,
+.crt-glitch-slice{
   position: absolute;
   right: auto;
-  height: 1.2vh;
   opacity: 0;
   border-radius: 2px;
+}
+
+.crt-glitch-bar{
+  height: 1.2vh;
+}
+
+.crt-glitch-slice{
+  left: 0;
+  width: 100%;
+  background:
+    linear-gradient(90deg, rgba(0,0,0,0.12), rgba(255,255,255,0.08), rgba(0,0,0,0.14)),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.08) 0px,
+      rgba(255,255,255,0.08) 1px,
+      rgba(0,0,0,0.0) 1px,
+      rgba(0,0,0,0.0) 3px
+    );
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 0 18px rgba(0,0,0,0.35);
+  mix-blend-mode: screen;
 }
 
 .crt-glitch-bar.bar-a{
   top: 18%;
   left: 8%;
   width: 21vw;
-  background: rgba(22, 28, 56, 0.72);
-  box-shadow: 0 0 8px rgba(16, 24, 56, 0.45);
+  background: rgba(22, 28, 56, 0.5);
+  box-shadow: 0 0 6px rgba(16, 24, 56, 0.28);
 }
 
 .crt-glitch-bar.bar-b{
@@ -960,8 +988,8 @@ body{
   left: 54%;
   width: 13vw;
   height: 0.9vh;
-  background: rgba(233, 235, 244, 0.42);
-  box-shadow: 0 0 8px rgba(255,255,255,0.2);
+  background: rgba(233, 235, 244, 0.26);
+  box-shadow: 0 0 6px rgba(255,255,255,0.12);
 }
 
 .crt-glitch-bar.bar-c{
@@ -969,8 +997,23 @@ body{
   left: 28%;
   width: 29vw;
   height: 1.5vh;
-  background: rgba(120, 14, 20, 0.58);
-  box-shadow: 0 0 10px rgba(141, 2, 5, 0.34);
+  background: rgba(120, 14, 20, 0.4);
+  box-shadow: 0 0 6px rgba(141, 2, 5, 0.2);
+}
+
+.crt-glitch-slice.slice-a{
+  top: 22%;
+  height: 3.2vh;
+}
+
+.crt-glitch-slice.slice-b{
+  top: 47%;
+  height: 2.4vh;
+}
+
+.crt-glitch-slice.slice-c{
+  top: 66%;
+  height: 3.8vh;
 }
 
 @keyframes crtFlicker {
