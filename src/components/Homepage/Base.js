@@ -27,6 +27,7 @@ function Base() {
   const glitchTimersRef = useRef([]);
   const gameModeAnimatedRef = useRef(false);
   const isExitingGameRef = useRef(false);
+  const keepPanelsOpenRef = useRef(false);
 
   const [isPlus, setPlus] = useState(null);
   const [isHelp, setHelp] = useState(false);
@@ -44,6 +45,22 @@ function Base() {
   const [exitWarningText, setExitWarningText] = useState('youll regret this later');
   const [highScore, setHighScore] = useState(0);
   const [redeemPoints, setRedeemPoints] = useState(0);
+  const [continueSignal, setContinueSignal] = useState(0);
+  const [runState, setRunState] = useState({ wave: 1, kills: 0, requiredKills: 15, shopOpen: true, skillCooldownMs: 0 });
+  const [shopTab, setShopTab] = useState('skills');
+  const [skillState, setSkillState] = useState({
+    ownedSkills: ['dodge'],
+    equippedSkillId: 'dodge',
+  });
+  const [passiveState, setPassiveState] = useState({
+    heart_up: 0,
+    extra_blaster: 0,
+    speed_control: 0,
+  });
+  const [charmState, setCharmState] = useState({
+    owned: [],
+    equipped: [],
+  });
   const runPointsSeenRef = useRef(0);
   const alarmAudioCtxRef = useRef(null);
   const exitAudioRef = useRef(null);
@@ -137,6 +154,56 @@ function Base() {
       return prevHigh;
     });
   }, []);
+
+  const shopSkills = [{ id: 'dodge', name: 'Dodge', cost: 0, desc: 'Dash forward + 1s i-frames' }];
+  const shopPassives = [
+    { id: 'heart_up', name: 'Heart Upgrade', cost: 60, cap: 2, desc: '+1 max heart' },
+    { id: 'extra_blaster', name: 'Extra Blaster', cost: 90, cap: 2, desc: '+1 pellet per shot' },
+    { id: 'speed_control', name: 'Speed Control', cost: 70, cap: 3, desc: '+movement acceleration/speed' },
+  ];
+  const shopCharms = [
+    { id: 'charm_focus', name: 'Focus Sigil', cost: 110, desc: 'Placeholder charm (future effect)' },
+    { id: 'charm_flux', name: 'Flux Core', cost: 110, desc: 'Placeholder charm (future effect)' },
+  ];
+
+  const handleRunStateUpdate = useCallback((nextState) => {
+    setRunState(nextState);
+  }, []);
+
+  const buyPassive = (id, cost, cap) => {
+    if (!runState.shopOpen || redeemPoints < cost) return;
+    const cur = passiveState[id] || 0;
+    if (cur >= cap) return;
+    setRedeemPoints((prev) => {
+      const next = prev - cost;
+      localStorage.setItem('homepageGameRedeemPoints', String(next));
+      return next;
+    });
+    setPassiveState((prev) => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
+  };
+
+  const buyCharm = (id, cost) => {
+    if (!runState.shopOpen || redeemPoints < cost) return;
+    if (charmState.owned.includes(id)) return;
+    setRedeemPoints((prev) => {
+      const next = prev - cost;
+      localStorage.setItem('homepageGameRedeemPoints', String(next));
+      return next;
+    });
+    setCharmState((prev) => ({ ...prev, owned: [...prev.owned, id] }));
+  };
+
+  const toggleCharmEquip = (id) => {
+    if (!charmState.owned.includes(id)) return;
+    setCharmState((prev) => {
+      const equipped = prev.equipped.includes(id)
+        ? prev.equipped.filter((c) => c !== id)
+        : prev.equipped.length >= 2
+          ? prev.equipped
+          : [...prev.equipped, id];
+      return { ...prev, equipped };
+    });
+  };
 
   useEffect(() => {
     if (isPlus) {
@@ -384,30 +451,54 @@ function Base() {
     };
 
     const onKeyDown = (e) => {
+      const lowered = e.key.toLowerCase();
+
       if (e.key === 'Escape') {
         e.preventDefault();
         if (gameHud.gameOver) {
-          exitGameModeToHome('Again');
-        } else if (isPaused) {
-          setIsPaused(false);
-        } else {
-          setIsPaused(true);
-          setPressedKeys(new Set());
+          exitGameModeToHome();
+          return;
         }
+        if (isPaused) {
+          setIsPaused(false);
+          return;
+        }
+        setIsPaused(true);
+        setPressedKeys(new Set());
+        return;
+      }
+
+      if (gameHud.gameOver && lowered === 'r') {
+        e.preventDefault();
+        exitGameModeToHome('Again');
+        return;
+      }
+
+      if (runState.shopOpen && lowered === 'f') {
+        e.preventDefault();
+        setContinueSignal((v) => v + 1);
         return;
       }
 
       if (isPaused) {
-        const pausedKey = e.key.toLowerCase();
-        if (pausedKey === 'q') {
+        if (lowered === 'q' && !gameHud.gameOver) {
           e.preventDefault();
           exitGameModeToHome();
+        }
+        if (lowered === 'r') {
+          e.preventDefault();
+          if (gameHud.gameOver) {
+            exitGameModeToHome('Again');
+          } else {
+            requestStartGame();
+          }
         }
         return;
       }
 
       const mapped = mapKey(e.key);
       if (!mapped) return;
+      e.preventDefault();
       setPressedKeys((prev) => new Set(prev).add(mapped));
     };
 
@@ -416,6 +507,7 @@ function Base() {
 
       const mapped = mapKey(e.key);
       if (!mapped) return;
+      e.preventDefault();
       setPressedKeys((prev) => {
         const next = new Set(prev);
         next.delete(mapped);
@@ -435,7 +527,7 @@ function Base() {
       window.removeEventListener('blur', onBlur);
       setPressedKeys(new Set());
     };
-  }, [isGameMode, gameStarted, isPaused, gameHud.gameOver]);
+  }, [isGameMode, gameStarted, isPaused, gameHud.gameOver, runState.shopOpen]);
 
   useEffect(() => {
     if (!isGameMode) return;
@@ -521,6 +613,13 @@ function Base() {
         }, 1.05);
       }
     } else {
+      if (keepPanelsOpenRef.current) {
+        keepPanelsOpenRef.current = false;
+        if (leftPanelRef.current) gsap.set(leftPanelRef.current, { autoAlpha: 1, x: '0vw', scale: 1 });
+        if (rightPanelRef.current) gsap.set(rightPanelRef.current, { autoAlpha: 1, x: '0vw', scale: 1 });
+        return;
+      }
+
       if (leftPanelRef.current) {
         tl.to(leftPanelRef.current, {
           scale: 0.62,
@@ -645,6 +744,8 @@ function Base() {
       setShowNameTray(false);
       setIsPaused(false);
       runPointsSeenRef.current = 0;
+      setContinueSignal((v) => v + 1);
+      setRunState({ wave: 1, kills: 0, requiredKills: 15, shopOpen: true, skillCooldownMs: 0 });
       setGameHud({ score: 0, points: 0, lives: 3, gameOver: false });
       setGameStarted(true);
       return;
@@ -661,6 +762,8 @@ function Base() {
     setShowNameTray(false);
     setIsPaused(false);
     runPointsSeenRef.current = 0;
+    setContinueSignal((v) => v + 1);
+    setRunState({ wave: 1, kills: 0, requiredKills: 15, shopOpen: true, skillCooldownMs: 0 });
     setGameHud({ score: 0, points: 0, lives: 3, gameOver: false });
     setGameStarted(true);
   };
@@ -716,6 +819,8 @@ function Base() {
     if (isExitingGameRef.current) return;
     isExitingGameRef.current = true;
 
+    const isAgainPath = overrideText === 'Again';
+
     setPressedKeys(new Set());
     setShowNameTray(false);
     setExitWarningText(overrideText);
@@ -753,59 +858,78 @@ function Base() {
       }, 0.64);
     }
 
+    if (!isAgainPath) {
+      if (leftPanelRef.current) {
+        tl.to(leftPanelRef.current, {
+          scale: 0.62,
+          duration: 0.28,
+          ease: 'power2.inOut',
+        }, 0.22)
+        .to(leftPanelRef.current, {
+          x: '36vw',
+          autoAlpha: 0,
+          duration: 0.5,
+          ease: 'power2.inOut',
+        }, 0.5);
+      }
 
-    if (leftPanelRef.current) {
-      tl.to(leftPanelRef.current, {
-        scale: 0.62,
-        duration: 0.28,
-        ease: 'power2.inOut',
-      }, 0.22)
-      .to(leftPanelRef.current, {
-        x: '36vw',
-        autoAlpha: 0,
-        duration: 0.5,
-        ease: 'power2.inOut',
-      }, 0.5);
+      if (rightPanelRef.current) {
+        tl.to(rightPanelRef.current, {
+          scale: 0.62,
+          duration: 0.28,
+          ease: 'power2.inOut',
+        }, 0.22)
+        .to(rightPanelRef.current, {
+          x: '-36vw',
+          autoAlpha: 0,
+          duration: 0.5,
+          ease: 'power2.inOut',
+        }, 0.5);
+      }
+
+      if (gameScreenRef.current) {
+        tl.to(gameScreenRef.current, {
+          transformOrigin: 'center center',
+          scaleX: 0,
+          duration: 0.42,
+          ease: 'power2.in',
+        }, 1.84);
+      }
+
+      if (exitOverlayRef.current) {
+        tl.to(exitOverlayRef.current, {
+          backgroundColor: '#1a0001',
+          duration: 0.45,
+          ease: 'power2.inOut',
+        }, 1.72)
+        .to(exitOverlayRef.current, {
+          autoAlpha: 0,
+          duration: 0.42,
+          ease: 'power2.inOut',
+        }, 2.04)
+        .call(() => {
+          window.location.reload();
+        }, [], 2.5);
+      }
+      return;
     }
 
-    if (rightPanelRef.current) {
-      tl.to(rightPanelRef.current, {
-        scale: 0.62,
-        duration: 0.28,
-        ease: 'power2.inOut',
-      }, 0.22)
-      .to(rightPanelRef.current, {
-        x: '-36vw',
-        autoAlpha: 0,
-        duration: 0.5,
-        ease: 'power2.inOut',
-      }, 0.5);
-    }
-
-    if (gameScreenRef.current) {
-      tl.to(gameScreenRef.current, {
-        transformOrigin: 'center center',
-        scaleX: 0,
-        duration: 0.42,
-        ease: 'power2.in',
-      }, 1.84);
-    }
-
-    if (exitOverlayRef.current) {
-      tl.to(exitOverlayRef.current, {
-        backgroundColor: '#1a0001',
-        duration: 0.45,
-        ease: 'power2.inOut',
-      }, 1.72)
-      .to(exitOverlayRef.current, {
-        autoAlpha: 0,
-        duration: 0.42,
-        ease: 'power2.inOut',
-      }, 2.04)
-      .call(() => {
-        window.location.reload();
-      }, [], 2.5);
-    }
+    // Again path: keep side panels open, no refresh, return to game-start prompt.
+    keepPanelsOpenRef.current = true;
+    tl.to(exitOverlayRef.current, {
+      autoAlpha: 0,
+      duration: 0.34,
+      ease: 'power2.inOut',
+    }, 1.42)
+    .call(() => {
+      setShowExitWarning(false);
+      setGameStarted(false);
+      setIsPaused(false);
+      runPointsSeenRef.current = 0;
+      setGameHud({ score: 0, points: 0, lives: 3, gameOver: false });
+      setRunState({ wave: 1, kills: 0, requiredKills: 15, shopOpen: true, skillCooldownMs: 0 });
+      setContinueSignal((v) => v + 1);
+    });
   }
 
   const enterGameMode = () => {
@@ -910,7 +1034,88 @@ function Base() {
 
       <div ref={gameScreenRef} className='game-screen-placeholder'>
         <div className={`game-screen-content game-layout ${gameStarted ? 'game-live' : 'game-idle'}`}>
-          <div ref={leftPanelRef} className='game-side-panel left-blank-panel'></div>
+          <div ref={leftPanelRef} className='game-side-panel left-blank-panel'>
+            <div className='shop-tabs'>
+              <button type='button' className={`shop-tab ${shopTab === 'skills' ? 'active' : ''}`} onClick={() => setShopTab('skills')}>Skills</button>
+              <button type='button' className={`shop-tab ${shopTab === 'charms' ? 'active' : ''}`} onClick={() => setShopTab('charms')}>Charms</button>
+              <button type='button' className={`shop-tab ${shopTab === 'passives' ? 'active' : ''}`} onClick={() => setShopTab('passives')}>Passives</button>
+            </div>
+
+            <div className='shop-body'>
+              {shopTab === 'skills' && (
+                <>
+                  {shopSkills.map((skill) => (
+                    <div key={skill.id} className='shop-item'>
+                      <div className='shop-item-title'>{skill.name} · {skill.cost === 0 ? 'FREE' : `${skill.cost} pts`}</div>
+                      <div className='shop-item-desc'>{skill.desc}</div>
+                      <button
+                        type='button'
+                        className='shop-btn'
+                        disabled={!skillState.ownedSkills.includes(skill.id)}
+                        onClick={() => setSkillState((prev) => ({ ...prev, equippedSkillId: skill.id }))}
+                      >
+                        {skillState.equippedSkillId === skill.id ? 'EQUIPPED' : 'EQUIP'}
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {shopTab === 'passives' && (
+                <>
+                  {shopPassives.map((p) => (
+                    <div key={p.id} className='shop-item'>
+                      <div className='shop-item-title'>{p.name} · {p.cost} pts</div>
+                      <div className='shop-item-desc'>{p.desc} ({passiveState[p.id] || 0}/{p.cap})</div>
+                      <button
+                        type='button'
+                        className='shop-btn'
+                        disabled={!runState.shopOpen || redeemPoints < p.cost || (passiveState[p.id] || 0) >= p.cap}
+                        onClick={() => buyPassive(p.id, p.cost, p.cap)}
+                      >
+                        BUY
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {shopTab === 'charms' && (
+                <>
+                  {shopCharms.map((c) => {
+                    const owned = charmState.owned.includes(c.id);
+                    const equipped = charmState.equipped.includes(c.id);
+                    const equipLocked = !equipped && charmState.equipped.length >= 2;
+                    return (
+                      <div key={c.id} className='shop-item'>
+                        <div className='shop-item-title'>{c.name} · {c.cost} pts</div>
+                        <div className='shop-item-desc'>{c.desc}</div>
+                        {!owned ? (
+                          <button
+                            type='button'
+                            className='shop-btn'
+                            disabled={!runState.shopOpen || redeemPoints < c.cost}
+                            onClick={() => buyCharm(c.id, c.cost)}
+                          >
+                            BUY
+                          </button>
+                        ) : (
+                          <button
+                            type='button'
+                            className='shop-btn'
+                            disabled={equipLocked}
+                            onClick={() => toggleCharmEquip(c.id)}
+                          >
+                            {equipped ? 'UNEQUIP' : 'EQUIP'}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          </div>
 
           <div className='game-main-panel crt-display'>
             <div className='crt-overlay'></div>
@@ -936,11 +1141,18 @@ function Base() {
                   isPaused={isPaused}
                   pressedKeys={pressedKeys}
                   onHudUpdate={handleHudUpdate}
+                  onRunStateUpdate={handleRunStateUpdate}
+                  continueSignal={continueSignal}
+                  loadout={{
+                    equippedSkillId: skillState.equippedSkillId,
+                    passives: passiveState,
+                    charms: charmState.equipped,
+                  }}
                 />
                 {isPaused && (
                   <div className='pause-overlay'>
                     <div className='pause-title'>PAUSED</div>
-                    <div className='pause-sub'>Press ESC to resume · Press Q to exit</div>
+                    <div className='pause-sub'>Press ESC to resume · Q to exit · R to restart</div>
                   </div>
                 )}
               </>
@@ -961,11 +1173,14 @@ function Base() {
             <div className='hud-value points-value'>{redeemPoints}</div>
             <div className='hud-row'>HIGH SCORE</div>
             <div className='hud-value'>{highScore}</div>
+            <div className='hud-row'>WAVE</div>
+            <div className='hud-value'>{runState.wave} · {runState.kills}/{runState.requiredKills}</div>
+            {runState.shopOpen && <div className='hud-row small'>Press F to continue</div>}
             <div className='hud-row'>HEALTH</div>
             <div className='hud-hearts'>
-              <span className={gameHud.lives >= 1 ? 'heart full' : 'heart empty'}>♥</span>{' '}
-              <span className={gameHud.lives >= 2 ? 'heart full' : 'heart empty'}>♥</span>{' '}
-              <span className={gameHud.lives >= 3 ? 'heart full' : 'heart empty'}>♥</span>
+              {Array.from({ length: 3 + (passiveState.heart_up || 0) }).map((_, i) => (
+                <span key={`heart-${i}`} className={gameHud.lives >= i + 1 ? 'heart full' : 'heart empty'}>♥</span>
+              ))}
             </div>
 
             <div className='hud-title keys-title'>KEYBINDS</div>

@@ -3,8 +3,24 @@ import React, { useEffect, useRef } from 'react';
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const rand = (min, max) => Math.random() * (max - min) + min;
 
+const WAVE_CONFIG = [
+  { wave: 1, killsRequired: 15, spawnInterval: [0.6, 1.1], types: ['asteroid'] },
+  { wave: 2, killsRequired: 25, spawnInterval: [0.45, 0.85], types: ['asteroid', 'star'] },
+];
+
+const STAR_TELEGRAPH_MS = 1500;
+const STAR_DASH_SPEED = 1200;
+const DODGE_COOLDOWN_MS = 4200;
+
+function rayToScreenEdge(x, y, dirX, dirY, width, height, pad = 18) {
+  const tx = dirX > 0 ? (width - pad - x) / dirX : dirX < 0 ? (pad - x) / dirX : Number.POSITIVE_INFINITY;
+  const ty = dirY > 0 ? (height - pad - y) / dirY : dirY < 0 ? (pad - y) / dirY : Number.POSITIVE_INFINITY;
+  const t = Math.max(0, Math.min(tx > 0 ? tx : Number.POSITIVE_INFINITY, ty > 0 ? ty : Number.POSITIVE_INFINITY));
+  return { x: x + dirX * t, y: y + dirY * t };
+}
+
 function makeAsteroid(width, height, shipX, shipY) {
-  const side = Math.floor(Math.random() * 4); // 0 top, 1 right, 2 bottom, 3 left
+  const side = Math.floor(Math.random() * 4);
   let x = 0;
   let y = 0;
 
@@ -34,18 +50,16 @@ function makeAsteroid(width, height, shipX, shipY) {
     points.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
   }
 
-  // initial heading toward ship (with a little variation)
   const dx = shipX - x;
   const dy = shipY - y;
   const d = Math.hypot(dx, dy) || 1;
-  const nx = dx / d;
-  const ny = dy / d;
 
   return {
+    type: 'asteroid',
     x,
     y,
-    vx: nx * speed,
-    vy: ny * speed,
+    vx: (dx / d) * speed,
+    vy: (dy / d) * speed,
     speed,
     radius,
     points,
@@ -54,14 +68,57 @@ function makeAsteroid(width, height, shipX, shipY) {
   };
 }
 
-function AsteroidsMini({ isGameMode, isPaused = false, pressedKeys, onHudUpdate }) {
+function makeStarShooter(width, height) {
+  const side = Math.floor(Math.random() * 4);
+  let x = 0;
+  let y = 0;
+  if (side === 0) {
+    x = rand(40, width - 40);
+    y = -26;
+  } else if (side === 1) {
+    x = width + 26;
+    y = rand(40, height - 40);
+  } else if (side === 2) {
+    x = rand(40, width - 40);
+    y = height + 26;
+  } else {
+    x = -26;
+    y = rand(40, height - 40);
+  }
+
+  return {
+    type: 'star',
+    x,
+    y,
+    vx: rand(-38, 38),
+    vy: rand(-38, 38),
+    radius: 16,
+    state: 'drift',
+    attackTimer: rand(1.2, 2.4),
+    telegraphTimer: 0,
+    beepTimer: 0,
+    lineDir: { x: 1, y: 0 },
+    dashTarget: { x, y },
+    fireCooldown: 0,
+  };
+}
+
+function AsteroidsMini({
+  isGameMode,
+  isPaused = false,
+  pressedKeys,
+  onHudUpdate,
+  onRunStateUpdate,
+  continueSignal = 0,
+  loadout,
+}) {
   const canvasRef = useRef(null);
 
   const shipRef = useRef({ x: 0, y: 0, angle: -Math.PI / 2, radius: 13 });
   const velocityRef = useRef({ x: 0, y: 0 });
 
   const bulletsRef = useRef([]);
-  const asteroidsRef = useRef([]);
+  const enemiesRef = useRef([]);
   const particlesRef = useRef([]);
 
   const pressedKeysRef = useRef(new Set());
@@ -74,11 +131,22 @@ function AsteroidsMini({ isGameMode, isPaused = false, pressedKeys, onHudUpdate 
   const scoreRef = useRef(0);
   const pointsRef = useRef(0);
   const livesRef = useRef(3);
+  const maxLivesRef = useRef(3);
   const invulnRef = useRef(0);
   const gameOverRef = useRef(false);
+  const waveRef = useRef(1);
+  const waveKillsRef = useRef(0);
+  const shopOpenRef = useRef(true);
+  const skillCooldownRef = useRef(0);
+  const continueSignalRef = useRef(continueSignal);
+  const continueHandledRef = useRef(continueSignal);
+  const loadoutRef = useRef(loadout || {});
+
   const hudLastRef = useRef({ score: -1, points: -1, lives: -1, gameOver: false });
+  const runStateLastRef = useRef({ wave: -1, kills: -1, requiredKills: -1, shopOpen: null, skillCooldownMs: -1 });
   const laserAudioCtxRef = useRef(null);
   const impactAudioCtxRef = useRef(null);
+  const targetBeepAudioCtxRef = useRef(null);
 
   useEffect(() => {
     pressedKeysRef.current = pressedKeys;
@@ -88,10 +156,28 @@ function AsteroidsMini({ isGameMode, isPaused = false, pressedKeys, onHudUpdate 
     isPausedRef.current = isPaused;
   }, [isPaused]);
 
+  useEffect(() => {
+    continueSignalRef.current = continueSignal;
+  }, [continueSignal]);
+
+  useEffect(() => {
+    loadoutRef.current = loadout || {};
+    const hearts = loadoutRef.current?.passives?.heart_up || 0;
+    const nextMaxLives = 3 + hearts;
+    const prevMaxLives = maxLivesRef.current;
+    maxLivesRef.current = nextMaxLives;
+
+    // When buying heart upgrades, grant the added heart immediately.
+    if (nextMaxLives > prevMaxLives) {
+      livesRef.current = Math.min(nextMaxLives, livesRef.current + (nextMaxLives - prevMaxLives));
+    } else {
+      livesRef.current = Math.min(livesRef.current, nextMaxLives);
+    }
+  }, [loadout]);
+
   const playLaserSound = () => {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
-
     if (!laserAudioCtxRef.current) laserAudioCtxRef.current = new Ctx();
     const ctx = laserAudioCtxRef.current;
     if (ctx.state === 'suspended') ctx.resume();
@@ -99,15 +185,12 @@ function AsteroidsMini({ isGameMode, isPaused = false, pressedKeys, onHudUpdate 
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-
     osc.type = 'square';
     osc.frequency.setValueAtTime(1320, now);
     osc.frequency.exponentialRampToValueAtTime(360, now + 0.08);
-
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(0.05, now + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.095);
-
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(now);
@@ -117,7 +200,6 @@ function AsteroidsMini({ isGameMode, isPaused = false, pressedKeys, onHudUpdate 
   const playImpactSound = () => {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
-
     if (!impactAudioCtxRef.current) impactAudioCtxRef.current = new Ctx();
     const ctx = impactAudioCtxRef.current;
     if (ctx.state === 'suspended') ctx.resume();
@@ -146,6 +228,30 @@ function AsteroidsMini({ isGameMode, isPaused = false, pressedKeys, onHudUpdate 
     noise.stop(now + 0.095);
   };
 
+  const playTargetBeep = (urgency = 0) => {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!targetBeepAudioCtxRef.current) targetBeepAudioCtxRef.current = new Ctx();
+    const ctx = targetBeepAudioCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const f = 520 + urgency * 320;
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(f, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.045, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.1);
+  };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !isGameMode) return;
@@ -160,46 +266,89 @@ function AsteroidsMini({ isGameMode, isPaused = false, pressedKeys, onHudUpdate 
 
     fit();
 
-    // hard reset per entry
     shipRef.current.x = canvas.width / 2;
     shipRef.current.y = canvas.height / 2;
     shipRef.current.angle = -Math.PI / 2;
-    velocityRef.current.x = 0;
-    velocityRef.current.y = 0;
+    velocityRef.current = { x: 0, y: 0 };
 
     bulletsRef.current = [];
-    asteroidsRef.current = [];
+    enemiesRef.current = [];
     particlesRef.current = [];
     spawnTimerRef.current = 0;
     shootCooldownRef.current = 0;
     scoreRef.current = 0;
     pointsRef.current = 0;
-    livesRef.current = 3;
+    waveRef.current = 1;
+    waveKillsRef.current = 0;
+    shopOpenRef.current = true;
+    skillCooldownRef.current = 0;
     invulnRef.current = 0;
     gameOverRef.current = false;
+    livesRef.current = maxLivesRef.current;
     hudLastRef.current = { score: -1, points: -1, lives: -1, gameOver: false };
+    runStateLastRef.current = { wave: -1, kills: -1, requiredKills: -1, shopOpen: null, skillCooldownMs: -1 };
+    continueHandledRef.current = continueSignalRef.current;
 
     window.addEventListener('resize', fit);
 
+    const emitHud = () => {
+      const hudNow = {
+        score: scoreRef.current,
+        points: pointsRef.current,
+        lives: livesRef.current,
+        gameOver: gameOverRef.current,
+      };
+      if (
+        onHudUpdate &&
+        (hudNow.score !== hudLastRef.current.score ||
+          hudNow.points !== hudLastRef.current.points ||
+          hudNow.lives !== hudLastRef.current.lives ||
+          hudNow.gameOver !== hudLastRef.current.gameOver)
+      ) {
+        hudLastRef.current = hudNow;
+        onHudUpdate(hudNow);
+      }
+    };
+
+    const emitRunState = () => {
+      const waveCfg = WAVE_CONFIG[Math.min(waveRef.current - 1, WAVE_CONFIG.length - 1)];
+      const next = {
+        wave: waveRef.current,
+        kills: waveKillsRef.current,
+        requiredKills: waveCfg.killsRequired,
+        shopOpen: shopOpenRef.current,
+        skillCooldownMs: Math.max(0, Math.round(skillCooldownRef.current * 1000)),
+      };
+      if (
+        onRunStateUpdate &&
+        (next.wave !== runStateLastRef.current.wave ||
+          next.kills !== runStateLastRef.current.kills ||
+          next.requiredKills !== runStateLastRef.current.requiredKills ||
+          next.shopOpen !== runStateLastRef.current.shopOpen ||
+          Math.abs(next.skillCooldownMs - runStateLastRef.current.skillCooldownMs) > 80)
+      ) {
+        runStateLastRef.current = next;
+        onRunStateUpdate(next);
+      }
+    };
+
+    const registerKill = () => {
+      waveKillsRef.current += 1;
+      const waveCfg = WAVE_CONFIG[Math.min(waveRef.current - 1, WAVE_CONFIG.length - 1)];
+      if (waveKillsRef.current >= waveCfg.killsRequired && !shopOpenRef.current) {
+        shopOpenRef.current = true;
+        enemiesRef.current = [];
+        bulletsRef.current = [];
+        if (waveRef.current < WAVE_CONFIG.length) waveRef.current += 1;
+      }
+    };
+
     const step = (ts) => {
-      // Keep canvas synced with visible size (prevents 1x1 hidden-size bug while animating in).
       const cw = Math.max(1, Math.floor(canvas.clientWidth));
       const ch = Math.max(1, Math.floor(canvas.clientHeight));
       if (canvas.width !== cw || canvas.height !== ch) {
-        const prevW = canvas.width;
-        const prevH = canvas.height;
-
         canvas.width = cw;
         canvas.height = ch;
-
-        // If we were in tiny hidden-size canvas (1x1-ish), re-center when real size appears.
-        if (prevW <= 2 || prevH <= 2) {
-          shipRef.current.x = cw / 2;
-          shipRef.current.y = ch / 2;
-        } else {
-          shipRef.current.x = clamp(shipRef.current.x, shipRef.current.radius, cw - shipRef.current.radius);
-          shipRef.current.y = clamp(shipRef.current.y, shipRef.current.radius, ch - shipRef.current.radius);
-        }
       }
 
       const prev = lastTimeRef.current || ts;
@@ -209,327 +358,317 @@ function AsteroidsMini({ isGameMode, isPaused = false, pressedKeys, onHudUpdate 
       const keys = pressedKeysRef.current;
       const ship = shipRef.current;
       const vel = velocityRef.current;
-      const isGameOver = gameOverRef.current;
 
       if (!isPausedRef.current) {
+        skillCooldownRef.current = Math.max(0, skillCooldownRef.current - dt);
         invulnRef.current = Math.max(0, invulnRef.current - dt);
 
-        // Heavier momentum tuning.
-        const maxSpeed = 560;
-        const accel = 640;
-        const drag = 0.991;
-
-        let ix = 0;
-        let iy = 0;
-
-        if (keys.has('←')) ix -= 1;
-        if (keys.has('→')) ix += 1;
-        if (keys.has('↑')) iy -= 1;
-        if (keys.has('↓')) iy += 1;
-
-        if (!isGameOver && (ix || iy)) {
-          const len = Math.hypot(ix, iy) || 1;
-          ix /= len;
-          iy /= len;
-
-          vel.x += ix * accel * dt;
-          vel.y += iy * accel * dt;
-
-          const vLen = Math.hypot(vel.x, vel.y);
-          if (vLen > maxSpeed) {
-            vel.x = (vel.x / vLen) * maxSpeed;
-            vel.y = (vel.y / vLen) * maxSpeed;
-          }
-
-          // Weighted turning: rotate toward target direction instead of snapping instantly.
-          const targetAngle = Math.atan2(iy, ix) + Math.PI / 2;
-          let diff = targetAngle - ship.angle;
-          while (diff > Math.PI) diff -= Math.PI * 2;
-          while (diff < -Math.PI) diff += Math.PI * 2;
-
-          const turnRate = 4.1; // radians/sec
-          const maxStep = turnRate * dt;
-          ship.angle += clamp(diff, -maxStep, maxStep);
+        const shouldContinue = continueSignalRef.current !== continueHandledRef.current;
+        if (shopOpenRef.current && shouldContinue && !gameOverRef.current) {
+          continueHandledRef.current = continueSignalRef.current;
+          shopOpenRef.current = false;
+          waveKillsRef.current = 0;
+          if (waveRef.current > WAVE_CONFIG.length) waveRef.current = WAVE_CONFIG.length;
         }
 
-        if (!isGameOver) {
+        if (!shopOpenRef.current && !gameOverRef.current) {
+          let ix = 0;
+          let iy = 0;
+          if (keys.has('←')) ix -= 1;
+          if (keys.has('→')) ix += 1;
+          if (keys.has('↑')) iy -= 1;
+          if (keys.has('↓')) iy += 1;
+
+          const speedMult = 1 + ((loadoutRef.current?.passives?.speed_control || 0) * 0.14);
+          const maxSpeed = 560 * speedMult;
+          const accel = 640 * speedMult;
+          const drag = 0.991;
+
+          if (ix || iy) {
+            const len = Math.hypot(ix, iy) || 1;
+            ix /= len;
+            iy /= len;
+            vel.x += ix * accel * dt;
+            vel.y += iy * accel * dt;
+            const vLen = Math.hypot(vel.x, vel.y);
+            if (vLen > maxSpeed) {
+              vel.x = (vel.x / vLen) * maxSpeed;
+              vel.y = (vel.y / vLen) * maxSpeed;
+            }
+            const targetAngle = Math.atan2(iy, ix) + Math.PI / 2;
+            let diff = targetAngle - ship.angle;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            ship.angle += clamp(diff, -4.1 * dt, 4.1 * dt);
+          }
+
+          if (keys.has('Q') && skillCooldownRef.current <= 0 && loadoutRef.current?.equippedSkillId === 'dodge') {
+            const dirX = Math.cos(ship.angle - Math.PI / 2);
+            const dirY = Math.sin(ship.angle - Math.PI / 2);
+            ship.x += dirX * 78;
+            ship.y += dirY * 78;
+            ship.x = clamp(ship.x, ship.radius, canvas.width - ship.radius);
+            ship.y = clamp(ship.y, ship.radius, canvas.height - ship.radius);
+            invulnRef.current = 1;
+            skillCooldownRef.current = DODGE_COOLDOWN_MS / 1000;
+          }
+
           vel.x *= drag;
           vel.y *= drag;
+          ship.x = clamp(ship.x + vel.x * dt, ship.radius, canvas.width - ship.radius);
+          ship.y = clamp(ship.y + vel.y * dt, ship.radius, canvas.height - ship.radius);
 
-          ship.x += vel.x * dt;
-          ship.y += vel.y * dt;
-
-          ship.x = clamp(ship.x, ship.radius, canvas.width - ship.radius);
-          ship.y = clamp(ship.y, ship.radius, canvas.height - ship.radius);
-        }
-
-        // Shoot (Space)
-        shootCooldownRef.current -= dt;
-        if (!isGameOver && keys.has('␣') && shootCooldownRef.current <= 0) {
-          const shotSpeed = 720;
-          const dirX = Math.cos(ship.angle - Math.PI / 2);
-          const dirY = Math.sin(ship.angle - Math.PI / 2);
-
-          if (bulletsRef.current.length < 36) {
-            bulletsRef.current.push({
-              x: ship.x + dirX * 14,
-              y: ship.y + dirY * 14,
-              vx: dirX * shotSpeed,
-              vy: dirY * shotSpeed,
-              radius: 2,
-            });
+          shootCooldownRef.current -= dt;
+          if (keys.has('␣') && shootCooldownRef.current <= 0) {
+            const dirX = Math.cos(ship.angle - Math.PI / 2);
+            const dirY = Math.sin(ship.angle - Math.PI / 2);
+            const shots = 1 + (loadoutRef.current?.passives?.extra_blaster || 0);
+            const spread = 0.18;
+            for (let s = 0; s < shots; s += 1) {
+              const offset = shots === 1 ? 0 : (s - (shots - 1) / 2) * spread;
+              const c = Math.cos(offset);
+              const sn = Math.sin(offset);
+              const sx = dirX * c - dirY * sn;
+              const sy = dirX * sn + dirY * c;
+              bulletsRef.current.push({ x: ship.x + sx * 14, y: ship.y + sy * 14, vx: sx * 720, vy: sy * 720, radius: 2 });
+            }
             playLaserSound();
+            shootCooldownRef.current = 0.16;
           }
 
-          shootCooldownRef.current = 0.16;
-        }
-
-        // Spawn asteroids
-        spawnTimerRef.current -= dt;
-        if (!isGameOver && spawnTimerRef.current <= 0) {
-          if (asteroidsRef.current.length < 18) {
-            asteroidsRef.current.push(makeAsteroid(canvas.width, canvas.height, ship.x, ship.y));
+          const waveCfg = WAVE_CONFIG[Math.min(waveRef.current - 1, WAVE_CONFIG.length - 1)];
+          spawnTimerRef.current -= dt;
+          if (spawnTimerRef.current <= 0) {
+            const canSpawnStar = waveCfg.types.includes('star') && !enemiesRef.current.some((e) => e.type === 'star');
+            const spawnStar = canSpawnStar && Math.random() < 0.26;
+            enemiesRef.current.push(
+              spawnStar ? makeStarShooter(canvas.width, canvas.height) : makeAsteroid(canvas.width, canvas.height, ship.x, ship.y)
+            );
+            spawnTimerRef.current = rand(waveCfg.spawnInterval[0], waveCfg.spawnInterval[1]);
           }
-          spawnTimerRef.current = rand(0.6, 1.2);
         }
 
-        // Update bullets
         for (let i = bulletsRef.current.length - 1; i >= 0; i -= 1) {
           const b = bulletsRef.current[i];
           b.x += b.vx * dt;
           b.y += b.vy * dt;
-          if (
-            b.x < 0 || b.x > canvas.width ||
-            b.y < 0 || b.y > canvas.height
-          ) {
-            bulletsRef.current.splice(i, 1);
+          if (b.x < -10 || b.x > canvas.width + 10 || b.y < -10 || b.y > canvas.height + 10) bulletsRef.current.splice(i, 1);
+        }
+
+        for (let i = enemiesRef.current.length - 1; i >= 0; i -= 1) {
+          const e = enemiesRef.current[i];
+          if (e.type === 'asteroid') {
+            const dx = ship.x - e.x;
+            const dy = ship.y - e.y;
+            const d = Math.hypot(dx, dy) || 1;
+            const nx = dx / d;
+            const ny = dy / d;
+            e.vx += (nx * e.speed - e.vx) * (0.9 * dt);
+            e.vy += (ny * e.speed - e.vy) * (0.9 * dt);
+            e.x += e.vx * dt;
+            e.y += e.vy * dt;
+            e.rot += e.spin * dt;
+          } else {
+            if (e.state !== 'dashing') {
+              e.x += e.vx * dt;
+              e.y += e.vy * dt;
+              if (e.x < 20 || e.x > canvas.width - 20) e.vx *= -1;
+              if (e.y < 20 || e.y > canvas.height - 20) e.vy *= -1;
+            }
+
+            e.attackTimer -= dt;
+            e.fireCooldown = Math.max(0, e.fireCooldown - dt);
+
+            if (e.state === 'drift' && e.attackTimer <= 0 && e.fireCooldown <= 0) {
+              const dx = ship.x - e.x;
+              const dy = ship.y - e.y;
+              const d = Math.hypot(dx, dy);
+              if (d < 0.0001) {
+                const a = rand(0, Math.PI * 2);
+                e.lineDir = { x: Math.cos(a), y: Math.sin(a) };
+              } else {
+                e.lineDir = { x: dx / d, y: dy / d };
+              }
+              e.dashTarget = rayToScreenEdge(e.x, e.y, e.lineDir.x, e.lineDir.y, canvas.width, canvas.height, 18);
+              e.state = 'telegraph';
+              e.telegraphTimer = STAR_TELEGRAPH_MS / 1000;
+              e.beepTimer = 0.28;
+            } else if (e.state === 'telegraph') {
+              e.telegraphTimer -= dt;
+              e.beepTimer -= dt;
+
+              const progress = 1 - clamp(e.telegraphTimer / (STAR_TELEGRAPH_MS / 1000), 0, 1);
+              const nextGap = 0.28 - (0.21 * progress);
+              if (e.beepTimer <= 0) {
+                playTargetBeep(progress);
+                e.beepTimer = Math.max(0.06, nextGap);
+              }
+
+              if (e.telegraphTimer <= 0) {
+                e.state = 'dashing';
+              }
+            } else if (e.state === 'dashing') {
+              const prevX = e.x;
+              const prevY = e.y;
+              const dx = e.dashTarget.x - e.x;
+              const dy = e.dashTarget.y - e.y;
+              const dist = Math.hypot(dx, dy);
+              const stepLen = STAR_DASH_SPEED * dt;
+
+              if (dist <= stepLen) {
+                e.x = e.dashTarget.x;
+                e.y = e.dashTarget.y;
+                e.state = 'drift';
+                e.attackTimer = rand(1.4, 2.2);
+                e.fireCooldown = 1.2;
+              } else {
+                e.x += (dx / dist) * stepLen;
+                e.y += (dy / dist) * stepLen;
+              }
+
+              // Break enemies in swept dash segment.
+              for (let k = enemiesRef.current.length - 1; k >= 0; k -= 1) {
+                const target = enemiesRef.current[k];
+                if (!target || target === e) continue;
+                const svx = e.x - prevX;
+                const svy = e.y - prevY;
+                const len2 = (svx * svx) + (svy * svy) || 1;
+                const t = clamp((((target.x - prevX) * svx) + ((target.y - prevY) * svy)) / len2, 0, 1);
+                const px = prevX + svx * t;
+                const py = prevY + svy * t;
+                const hitDist = Math.hypot(target.x - px, target.y - py);
+                if (hitDist <= target.radius + e.radius * 0.55) {
+                  enemiesRef.current.splice(k, 1);
+                  scoreRef.current += target.type === 'star' ? 260 : 100;
+                  pointsRef.current += target.type === 'star' ? 20 : 10;
+                  playImpactSound();
+                  registerKill();
+                }
+              }
+
+              if (!gameOverRef.current && invulnRef.current <= 0) {
+                const svx = e.x - prevX;
+                const svy = e.y - prevY;
+                const len2 = (svx * svx) + (svy * svy) || 1;
+                const t = clamp((((ship.x - prevX) * svx) + ((ship.y - prevY) * svy)) / len2, 0, 1);
+                const px = prevX + svx * t;
+                const py = prevY + svy * t;
+                const shipDist = Math.hypot(ship.x - px, ship.y - py);
+                if (shipDist <= ship.radius + 4) {
+                  livesRef.current = Math.max(0, livesRef.current - 1);
+                  invulnRef.current = 1;
+                  if (livesRef.current <= 0) gameOverRef.current = true;
+                }
+              }
+            }
           }
         }
 
-        // Update asteroids (home toward ship)
-        for (let i = asteroidsRef.current.length - 1; i >= 0; i -= 1) {
-          const a = asteroidsRef.current[i];
-
-          const dx = ship.x - a.x;
-          const dy = ship.y - a.y;
-          const d = Math.hypot(dx, dy) || 1;
-          const nx = dx / d;
-          const ny = dy / d;
-
-          const targetVx = nx * a.speed;
-          const targetVy = ny * a.speed;
-          const steer = 0.9 * dt;
-
-          a.vx += (targetVx - a.vx) * steer;
-          a.vy += (targetVy - a.vy) * steer;
-
-          a.x += a.vx * dt;
-          a.y += a.vy * dt;
-          a.rot += a.spin * dt;
-
-          if (a.x < -80 || a.x > canvas.width + 80 || a.y < -80 || a.y > canvas.height + 80) {
-            asteroidsRef.current.splice(i, 1);
-          }
-        }
-
-        // Asteroid vs asteroid collisions (elastic-ish bounce + overlap separation)
-        const ast = asteroidsRef.current;
-        for (let i = 0; i < ast.length; i += 1) {
-          for (let j = i + 1; j < ast.length; j += 1) {
-            const a = ast[i];
-            const b = ast[j];
-
+        // enemy body collisions (asteroids + shooter asteroid)
+        const collideBodies = enemiesRef.current;
+        for (let i = 0; i < collideBodies.length; i += 1) {
+          for (let j = i + 1; j < collideBodies.length; j += 1) {
+            const a = collideBodies[i];
+            const b = collideBodies[j];
             const dx = b.x - a.x;
             const dy = b.y - a.y;
             const dist = Math.hypot(dx, dy) || 0.0001;
             const minDist = a.radius + b.radius;
-
             if (dist < minDist) {
               const nx = dx / dist;
               const ny = dy / dist;
-
-              // Separate overlap to avoid sticking/merging
               const overlap = (minDist - dist) * 0.5;
               a.x -= nx * overlap;
               a.y -= ny * overlap;
               b.x += nx * overlap;
               b.y += ny * overlap;
 
-              // Relative velocity along normal
               const rvx = b.vx - a.vx;
               const rvy = b.vy - a.vy;
               const velAlongNormal = rvx * nx + rvy * ny;
-
-              // If moving apart after separation, skip impulse
               if (velAlongNormal > 0) continue;
 
-              // Mass by area-ish (radius^2), restitution slightly inelastic
               const ma = Math.max(1, a.radius * a.radius);
               const mb = Math.max(1, b.radius * b.radius);
               const invMa = 1 / ma;
               const invMb = 1 / mb;
               const restitution = 0.86;
-
               const impulse = (-(1 + restitution) * velAlongNormal) / (invMa + invMb);
               const ix = impulse * nx;
               const iy = impulse * ny;
-
               a.vx -= ix * invMa;
               a.vy -= iy * invMa;
               b.vx += ix * invMb;
               b.vy += iy * invMb;
-
-              // Tiny spin kick for visual feedback
-              a.spin += rand(-0.12, 0.12);
-              b.spin += rand(-0.12, 0.12);
             }
           }
         }
 
-        // If invulnerable, gently push overlapping asteroids out of the ship radius
-        // to avoid "stacked overlap" edge-cases.
-        if (invulnRef.current > 0) {
-          for (let ai = 0; ai < asteroidsRef.current.length; ai += 1) {
-            const a = asteroidsRef.current[ai];
-            const dx = a.x - ship.x;
-            const dy = a.y - ship.y;
-            const d = Math.hypot(dx, dy) || 0.0001;
-            const minDist = ship.radius + a.radius + 4;
-            if (d < minDist) {
-              const nx = dx / d;
-              const ny = dy / d;
-              const push = (minDist - d) * 0.85;
-              a.x += nx * push;
-              a.y += ny * push;
-              a.vx += nx * 40;
-              a.vy += ny * 40;
-            }
-          }
-        }
-
-        // Ship vs asteroid collisions (3 hearts + 3s invulnerability)
-        if (!isGameOver && invulnRef.current <= 0) {
-          for (let ai = asteroidsRef.current.length - 1; ai >= 0; ai -= 1) {
-            const a = asteroidsRef.current[ai];
-            const dx = ship.x - a.x;
-            const dy = ship.y - a.y;
-            const d = Math.hypot(dx, dy);
-
-            if (d <= ship.radius + a.radius) {
-              asteroidsRef.current.splice(ai, 1);
-              livesRef.current = Math.max(0, livesRef.current - 1);
-              invulnRef.current = 3;
-
-              // small ship-hit burst
-              const burst = 14;
-              for (let p = 0; p < burst; p += 1) {
-                const ang = rand(0, Math.PI * 2);
-                const spd = rand(80, 220);
-                particlesRef.current.push({
-                  x: ship.x,
-                  y: ship.y,
-                  vx: Math.cos(ang) * spd,
-                  vy: Math.sin(ang) * spd,
-                  life: rand(0.15, 0.32),
-                  maxLife: 0.32,
-                  size: Math.random() < 0.5 ? 1 : 2,
-                });
-              }
-
-              if (livesRef.current <= 0) {
-                gameOverRef.current = true;
-              }
-              break;
-            }
-          }
-        }
-
-        // Bullet vs asteroid collisions
         for (let bi = bulletsRef.current.length - 1; bi >= 0; bi -= 1) {
           const b = bulletsRef.current[bi];
+          if (!b) continue;
+
           let hit = false;
-
-          for (let ai = asteroidsRef.current.length - 1; ai >= 0; ai -= 1) {
-            const a = asteroidsRef.current[ai];
-            const dx = b.x - a.x;
-            const dy = b.y - a.y;
-            const d = Math.hypot(dx, dy);
-
-            if (d <= b.radius + a.radius) {
-              asteroidsRef.current.splice(ai, 1);
+          for (let ei = enemiesRef.current.length - 1; ei >= 0; ei -= 1) {
+            const e = enemiesRef.current[ei];
+            const d = Math.hypot(b.x - e.x, b.y - e.y);
+            if (d <= b.radius + e.radius) {
+              enemiesRef.current.splice(ei, 1);
               hit = true;
-              scoreRef.current += Math.round(1000 / Math.max(10, a.radius));
-              pointsRef.current += 10;
+              scoreRef.current += e.type === 'star' ? 260 : 100;
+              pointsRef.current += e.type === 'star' ? 20 : 10;
               playImpactSound();
-
-              // Impact particles (white pixel burst)
-              const burst = Math.floor(rand(8, 14));
-              for (let p = 0; p < burst; p += 1) {
-                const ang = rand(0, Math.PI * 2);
-                const spd = rand(90, 260);
-                particlesRef.current.push({
-                  x: b.x,
-                  y: b.y,
-                  vx: Math.cos(ang) * spd,
-                  vy: Math.sin(ang) * spd,
-                  life: rand(0.16, 0.34),
-                  maxLife: 0.34,
-                  size: Math.random() < 0.5 ? 1 : 2,
-                });
-              }
-              if (particlesRef.current.length > 120) {
-                particlesRef.current.splice(0, particlesRef.current.length - 120);
-              }
+              registerKill();
               break;
             }
           }
-
           if (hit) bulletsRef.current.splice(bi, 1);
         }
 
-        // Update particles
-        for (let i = particlesRef.current.length - 1; i >= 0; i -= 1) {
-          const p = particlesRef.current[i];
-          p.x += p.vx * dt;
-          p.y += p.vy * dt;
-          p.vx *= 0.94;
-          p.vy *= 0.94;
-          p.life -= dt;
-          if (p.life <= 0) particlesRef.current.splice(i, 1);
+        if (!gameOverRef.current && !shopOpenRef.current) {
+          for (let ei = enemiesRef.current.length - 1; ei >= 0; ei -= 1) {
+            const e = enemiesRef.current[ei];
+            const dx = e.x - ship.x;
+            const dy = e.y - ship.y;
+            const d = Math.hypot(dx, dy) || 0.0001;
+            const minDist = ship.radius + e.radius + 2;
+
+            if (d <= minDist) {
+              const nx = dx / d;
+              const ny = dy / d;
+              const push = (minDist - d);
+
+              // Always resolve overlap so enemies can't sit inside the ship.
+              e.x += nx * push;
+              e.y += ny * push;
+              e.vx += nx * 40;
+              e.vy += ny * 40;
+
+              // Damage only when not invulnerable.
+              if (invulnRef.current <= 0) {
+                enemiesRef.current.splice(ei, 1);
+                livesRef.current = Math.max(0, livesRef.current - 1);
+                invulnRef.current = 1;
+                if (livesRef.current <= 0) gameOverRef.current = true;
+                break;
+              }
+            }
+          }
         }
 
-        const hudNow = {
-          score: scoreRef.current,
-          points: pointsRef.current,
-          lives: livesRef.current,
-          gameOver: gameOverRef.current,
-        };
-        if (
-          onHudUpdate &&
-          (hudNow.score !== hudLastRef.current.score ||
-            hudNow.points !== hudLastRef.current.points ||
-            hudNow.lives !== hudLastRef.current.lives ||
-            hudNow.gameOver !== hudLastRef.current.gameOver)
-        ) {
-          hudLastRef.current = hudNow;
-          onHudUpdate(hudNow);
-        }
+        emitHud();
+        emitRunState();
       }
 
-      // Draw
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      ctx.strokeStyle = '#fff';
-      ctx.fillStyle = '#fff';
-      ctx.lineWidth = 1.4;
-
-      // Ship (triangle-ish) with invulnerability blink
       const blinkVisible = invulnRef.current <= 0 || Math.floor(ts / 120) % 2 === 0;
       if (blinkVisible) {
         ctx.save();
         ctx.translate(Math.round(ship.x), Math.round(ship.y));
         ctx.rotate(ship.angle);
+        ctx.strokeStyle = '#fff';
         ctx.beginPath();
         ctx.moveTo(0, -13);
         ctx.lineTo(9, 9);
@@ -540,34 +679,65 @@ function AsteroidsMini({ isGameMode, isPaused = false, pressedKeys, onHudUpdate 
         ctx.restore();
       }
 
-      // Bullets
+      ctx.fillStyle = '#fff';
       bulletsRef.current.forEach((b) => {
         ctx.fillRect(Math.round(b.x) - 1, Math.round(b.y) - 1, 3, 3);
       });
 
-      // Asteroids
-      asteroidsRef.current.forEach((a) => {
+      enemiesRef.current.forEach((e) => {
         ctx.save();
-        ctx.translate(Math.round(a.x), Math.round(a.y));
-        ctx.rotate(a.rot);
+        ctx.translate(Math.round(e.x), Math.round(e.y));
+        if (e.type === 'asteroid') {
+          ctx.rotate(e.rot);
+          ctx.strokeStyle = '#fff';
+          ctx.beginPath();
+          for (let i = 0; i < e.points.length; i += 1) {
+            const p = e.points[i];
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          }
+          ctx.closePath();
+          ctx.stroke();
+        } else {
+          const t = e.state === 'telegraph' ? 0.55 + (1 - (e.telegraphTimer / (STAR_TELEGRAPH_MS / 1000))) * 0.45 : 0.35;
+          ctx.fillStyle = `rgba(255,255,255,${t})`;
+          ctx.beginPath();
+          ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
+          ctx.fill();
+          if (e.state === 'telegraph') {
+            ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+            ctx.setLineDash([6, 6]);
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(e.dashTarget.x - e.x, e.dashTarget.y - e.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
 
-        ctx.beginPath();
-        for (let i = 0; i < a.points.length; i += 1) {
-          const p = a.points[i];
-          if (i === 0) ctx.moveTo(p.x, p.y);
-          else ctx.lineTo(p.x, p.y);
+          if (e.state === 'dashing') {
+            ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-e.lineDir.x * 24, -e.lineDir.y * 24);
+            ctx.stroke();
+          }
         }
-        ctx.closePath();
-        ctx.stroke();
         ctx.restore();
       });
 
-      // Particles
-      particlesRef.current.forEach((p) => {
-        const alpha = clamp(p.life / p.maxLife, 0, 1);
-        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-        ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
-      });
+      if (shopOpenRef.current && !gameOverRef.current) {
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = '#fff';
+        ctx.strokeRect(canvas.width / 2 - 180, canvas.height / 2 - 52, 360, 104);
+        ctx.fillStyle = '#fff';
+        ctx.font = '15px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('SHOP OPEN', canvas.width / 2, canvas.height / 2 - 14);
+        ctx.font = '12px monospace';
+        ctx.fillText('Press F to start next wave', canvas.width / 2, canvas.height / 2 + 14);
+        ctx.textAlign = 'left';
+      }
 
       if (gameOverRef.current) {
         ctx.textAlign = 'center';
@@ -575,12 +745,11 @@ function AsteroidsMini({ isGameMode, isPaused = false, pressedKeys, onHudUpdate 
         ctx.fillRect((canvas.width / 2) - 150, (canvas.height / 2) - 44, 300, 88);
         ctx.strokeStyle = '#fff';
         ctx.strokeRect((canvas.width / 2) - 150, (canvas.height / 2) - 44, 300, 88);
-
         ctx.fillStyle = '#fff';
         ctx.font = '16px monospace';
         ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 8);
         ctx.font = '11px monospace';
-        ctx.fillText('PRESS ESC TO EXIT', canvas.width / 2, canvas.height / 2 + 16);
+        ctx.fillText('R TO RESTART · ESC TO EXIT', canvas.width / 2, canvas.height / 2 + 16);
         ctx.textAlign = 'left';
       }
 
@@ -594,14 +763,9 @@ function AsteroidsMini({ isGameMode, isPaused = false, pressedKeys, onHudUpdate 
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       lastTimeRef.current = 0;
     };
-  }, [isGameMode, onHudUpdate]);
+  }, [isGameMode, onHudUpdate, onRunStateUpdate]);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{ width: '100%', height: '100%', display: 'block', background: '#000' }}
-    />
-  );
+  return <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block', background: '#000' }} />;
 }
 
 export default AsteroidsMini;
