@@ -9,6 +9,7 @@ import Education from './Education';
 import AsteroidsMini from './AsteroidsMini';
 import gsap from 'gsap';
 import escRedscreenSfx from '../../Assets/Audio/esc-redscreen.wav';
+import waveStartSfx from '../../Assets/Audio/wave-start.wav';
 
 function Base() {
   const stageRef = useRef(null);
@@ -27,7 +28,7 @@ function Base() {
   const glitchTimersRef = useRef([]);
   const gameModeAnimatedRef = useRef(false);
   const isExitingGameRef = useRef(false);
-  const keepPanelsOpenRef = useRef(false);
+  const hasSeenGameMenuRef = useRef(false);
 
   const [isPlus, setPlus] = useState(null);
   const [isHelp, setHelp] = useState(false);
@@ -61,9 +62,12 @@ function Base() {
     owned: [],
     equipped: [],
   });
+  const [menuIntroVariant, setMenuIntroVariant] = useState('initial');
+  const [logoPose, setLogoPose] = useState({ x: 0, y: 0, rx: 0, ry: 0 });
   const runPointsSeenRef = useRef(0);
   const alarmAudioCtxRef = useRef(null);
   const exitAudioRef = useRef(null);
+  const waveStartAudioRef = useRef(null);
 
 
   const triggerPopup = () => {
@@ -123,13 +127,56 @@ function Base() {
     audio.volume = 0.9;
     exitAudioRef.current = audio;
 
+    const waveAudio = new Audio(waveStartSfx);
+    waveAudio.preload = 'auto';
+    waveAudio.volume = 0.9;
+    waveStartAudioRef.current = waveAudio;
+
     return () => {
       if (exitAudioRef.current) {
         exitAudioRef.current.pause();
         exitAudioRef.current.currentTime = 0;
       }
+      if (waveStartAudioRef.current) {
+        waveStartAudioRef.current.pause();
+        waveStartAudioRef.current.currentTime = 0;
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isGameMode || gameStarted) return;
+
+    const target = { x: 0, y: 0 };
+    const current = { x: 0, y: 0 };
+    let raf = 0;
+
+    const tick = () => {
+      current.x += (target.x - current.x) * 0.1;
+      current.y += (target.y - current.y) * 0.1;
+      setLogoPose({
+        x: current.x * 10,
+        y: current.y * 8,
+        rx: current.y * -4,
+        ry: current.x * 5,
+      });
+      raf = requestAnimationFrame(tick);
+    };
+
+    const onMove = (e) => {
+      target.x = ((e.clientX / window.innerWidth) * 2) - 1;
+      target.y = ((e.clientY / window.innerHeight) * 2) - 1;
+    };
+
+    raf = requestAnimationFrame(tick);
+    window.addEventListener('mousemove', onMove);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('mousemove', onMove);
+      setLogoPose({ x: 0, y: 0, rx: 0, ry: 0 });
+    };
+  }, [isGameMode, gameStarted]);
 
   const handleHudUpdate = useCallback((nextHud) => {
     setGameHud(nextHud);
@@ -418,17 +465,24 @@ function Base() {
   useEffect(() => {
     if (!isGameMode || gameStarted) return;
 
+    if (!hasSeenGameMenuRef.current) {
+      setMenuIntroVariant('initial');
+      hasSeenGameMenuRef.current = true;
+    } else {
+      setMenuIntroVariant('quick');
+    }
+
     const onMenuKeyDown = (e) => {
       const k = e.key.toLowerCase();
-      if (k === ' ' || k === 'spacebar' || k === 'space') {
+      if (k === 'q' || k === 'escape') {
         e.preventDefault();
-        requestStartGame();
+        exitGameModeToHome();
         return;
       }
 
-      if (k === 'q') {
+      if (k === ' ' || k === 'spacebar' || k === 'space') {
         e.preventDefault();
-        exitGameModeToHome();
+        requestStartGame();
       }
     };
 
@@ -476,6 +530,10 @@ function Base() {
 
       if (runState.shopOpen && lowered === 'f') {
         e.preventDefault();
+        if (waveStartAudioRef.current) {
+          waveStartAudioRef.current.currentTime = 0;
+          waveStartAudioRef.current.play().catch(() => {});
+        }
         setContinueSignal((v) => v + 1);
         return;
       }
@@ -487,11 +545,7 @@ function Base() {
         }
         if (lowered === 'r') {
           e.preventDefault();
-          if (gameHud.gameOver) {
-            exitGameModeToHome('Again');
-          } else {
-            requestStartGame();
-          }
+          exitGameModeToHome('Again');
         }
         return;
       }
@@ -613,13 +667,6 @@ function Base() {
         }, 1.05);
       }
     } else {
-      if (keepPanelsOpenRef.current) {
-        keepPanelsOpenRef.current = false;
-        if (leftPanelRef.current) gsap.set(leftPanelRef.current, { autoAlpha: 1, x: '0vw', scale: 1 });
-        if (rightPanelRef.current) gsap.set(rightPanelRef.current, { autoAlpha: 1, x: '0vw', scale: 1 });
-        return;
-      }
-
       if (leftPanelRef.current) {
         tl.to(leftPanelRef.current, {
           scale: 0.62,
@@ -914,8 +961,7 @@ function Base() {
       return;
     }
 
-    // Again path: keep side panels open, no refresh, return to game-start prompt.
-    keepPanelsOpenRef.current = true;
+    // Again path: no refresh, return to game-start prompt.
     tl.to(exitOverlayRef.current, {
       autoAlpha: 0,
       duration: 0.34,
@@ -1157,9 +1203,24 @@ function Base() {
                 )}
               </>
             ) : (
-              <div className='game-main-menu'>
-                <div className='game-main-menu-title'>RELOADED</div>
-                <div className='game-main-menu-sub'>Press SPACE to start</div>
+              <div className={`game-main-menu ${menuIntroVariant === 'quick' ? 'quick-intro' : ''}`}>
+                <div
+                  className='game-loading-logo-wrap'
+                  style={{ transform: `translate3d(${logoPose.x}px, ${logoPose.y}px, 0) rotateX(${logoPose.rx}deg) rotateY(${logoPose.ry}deg)` }}
+                >
+                  <div
+                    className='game-loading-logo'
+                    style={{ '--core-x': `${logoPose.x * 0.7}px`, '--core-y': `${logoPose.y * 0.7}px` }}
+                  >
+                    <span className='ring ring-a'></span>
+                    <span className='ring ring-b'></span>
+                    <span className='ring ring-c'></span>
+                    <span className='core'></span>
+                  </div>
+                </div>
+                <div className='game-main-menu-title image-style'>RELOADED</div>
+                <div className='game-main-menu-sub image-style'>PRESS SPACE</div>
+                <div className='game-main-menu-meta'>PROFILE: SHERZYBATH // SYSTEM: READY</div>
               </div>
             )}
           </div>
